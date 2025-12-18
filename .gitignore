@@ -2,3 +2,4 @@
 project.md
 .venv
 __pycache__/
+.claude/
