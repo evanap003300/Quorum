@@ -1,16 +1,19 @@
+import asyncio
 from dotenv import load_dotenv
 load_dotenv()
 from e2b_code_interpreter import Sandbox
 
-async def run(code: str) -> None:
-    sandbox = Sandbox() # By default the sandbox is alive for 5 minutes
-    
-    await sandbox.commands.run("sympy")
-    await sandbox.install_package("pint")
-    await sandbox.install_package("numpy")
+async def run(code: str) -> str:
+    sandbox = Sandbox()
 
-    execution = sandbox.run_code("print('hello world')") # Execute Python inside the sandbox
-    print(execution.logs)
-    execution = sandbox.run_python(code)
+    sandbox.commands.run("pip install sympy pint numpy")
 
-    print("Output:", execution.output)
+    if code:
+        execution = sandbox.run_code(code)
+        return "".join(execution.logs.stdout)
+
+    return ""
+
+if __name__ == '__main__':
+    output = asyncio.run(run("print('Hello world!')"))
+    print(output)
