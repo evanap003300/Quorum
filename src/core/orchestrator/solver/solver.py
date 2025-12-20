@@ -9,7 +9,7 @@ client = OpenAI(
     api_key=os.getenv("OPEN_ROUTER_KEY")
 )
 
-def solve(text: str) -> str:
+def solve(plan: str) -> str:
     solver_prompt = """
         You are an expert problem solver. Your job is to analyze problems and provide thorough, accurate solutions. Be precise and detailed in your responses.
     """
@@ -23,8 +23,9 @@ def solve(text: str) -> str:
             },
             {
                 "role": "user",
-                "content": text
+                "content": plan
             }
         ]
     )
+
     return completion.choices[0].message.content

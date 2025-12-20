@@ -9,18 +9,24 @@ client = OpenAI(
     api_key=os.getenv("OPEN_ROUTER_KEY")
 )
 
-def plan(text: str) -> str:
+# Needs to return the state object with steps
+def plan(question: str) -> str:
+    planner_prompt = """
+        You are an expert planner. Your job is to analyze problems and provide thorough, accurate solutions. Be precise and detailed in your responses.
+    """
+
     completion = client.chat.completions.create(
-        model="openai/gpt-4.1-mini",
+        model="google/gemini-3-pro-preview",
         messages=[
             {
                 "role": "system",
-                "content": "You are an expert problem solver. Your job is to analyze problems and provide thorough, accurate solutions. Be precise and detailed in your responses."
+                "content": planner_prompt
             },
             {
                 "role": "user",
-                "content": text
+                "content": question
             }
         ]
     )
+
     return completion.choices[0].message.content
