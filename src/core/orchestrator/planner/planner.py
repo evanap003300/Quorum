@@ -1,8 +1,13 @@
 import os
 import json
+import sys
 from typing import Tuple
 from dotenv import load_dotenv
 from openai import OpenAI
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(__file__))
+
 from schema import StateObject, Plan
 
 load_dotenv()

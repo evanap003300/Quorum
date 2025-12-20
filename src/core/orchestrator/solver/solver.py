@@ -5,6 +5,10 @@ from typing import Optional, Tuple
 from dotenv import load_dotenv
 from openai import OpenAI
 import importlib.util
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from planner.schema import Step, StateObject
 
@@ -189,7 +193,7 @@ def _execute_with_llm(prompt: str) -> Tuple[float, str, str]:
     
     for attempt in range(max_attempts):
         completion = client.chat.completions.create(
-            model="google/gemini-2.0-flash-exp:free",
+            model="google/gemini-3-pro-preview",
             messages=messages,
             tools=TOOLS,
             tool_choice="auto",
