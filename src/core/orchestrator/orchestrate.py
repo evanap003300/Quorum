@@ -1,3 +1,10 @@
+import base64
+import solve from solver.solver
+import plan from planner.planner
 
-# Takes in the text for the question
-# has an opitonal parameter for an image 
+def generate_solution(question: str, image: base64 = None) -> str:
+    context = question + str(image)
+    plan(context)
+    answer = solve(plan)
+    
+    return answer
