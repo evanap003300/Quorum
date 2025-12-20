@@ -10,7 +10,11 @@ async def run(code: str) -> str:
 
     if code:
         execution = sandbox.run_code(code)
-        return "".join(execution.logs.stdout)
+        # Combine stdout and stderr to catch all output
+        output = "".join(execution.logs.stdout)
+        if execution.logs.stderr:
+            output += "".join(execution.logs.stderr)
+        return output
 
     return ""
 

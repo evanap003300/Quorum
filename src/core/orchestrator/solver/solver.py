@@ -171,64 +171,64 @@ Generate the code."""
 def _execute_with_llm(prompt: str) -> Tuple[float, str, str]:
     """
     Execute the LLM tool loop to generate and run code.
-    
+
     Returns:
         Tuple of (value, unit, code)
     """
-    
+
     messages = [
         {
             "role": "system",
-            "content": "You are a code generator for physics calculations. Generate clean Python code."
+            "content": "You are a code generator for physics calculations. Generate clean Python code and use the python_interpreter tool to execute it."
         },
         {
             "role": "user",
             "content": prompt
         }
     ]
-    
+
     code = None
     output = None
     max_attempts = 3
-    
+
     for attempt in range(max_attempts):
         completion = client.chat.completions.create(
             model="google/gemini-3-pro-preview",
             messages=messages,
             tools=TOOLS,
-            tool_choice="auto",
+            tool_choice="required",  # Force LLM to use a tool
             temperature=0.1
         )
-        
+
         choice = completion.choices[0]
-        
+
         if choice.finish_reason == "tool_calls":
             assistant_message = choice.message
             messages.append(assistant_message)
-            
+
             for tool_call in assistant_message.tool_calls:
                 if tool_call.function.name == "python_interpreter":
                     args = json.loads(tool_call.function.arguments)
                     code = args["code"]
-                    
+
                     # Execute the code
                     output = asyncio.run(run_python(code))
-                    
+
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
-                        "content": output
+                        "content": output if output else "(No output generated)"
                     })
         else:
-            # Done
-            break
-    
+            # Should not reach here with tool_choice="required", but handle it
+            raise ValueError(f"Unexpected finish reason: {choice.finish_reason}")
+
     if not output:
         raise ValueError("No output generated from code execution")
-    
+
     # Parse output: expect "value unit" format
     value, unit = _parse_output(output)
-    
+
     return value, unit, code
 
 
