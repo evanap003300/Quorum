@@ -1,14 +1,15 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Union
 from enum import Enum
 
 class Variable(BaseModel):
     name: str
     description: str
     expected_unit: str
-    value: Optional[float] = None
+    value: Optional[Union[float, str]] = None  # float for numeric, str for symbolic
     unit: Optional[str] = None
     source_step: Optional[int] = None
+    is_symbolic: bool = False  # True if this is a symbolic variable
 
 class StateObject(BaseModel):
     problem_text: str
@@ -30,6 +31,7 @@ class Step(BaseModel):
     formula: Optional[str] = None
     expected_unit: str
     justification: str = Field(..., max_length=150)
+    is_symbolic: bool = False  # True if this step involves symbolic variables
 
 class Plan(BaseModel):
     steps: List[Step]

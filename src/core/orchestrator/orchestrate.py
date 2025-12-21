@@ -23,7 +23,7 @@ def solve_problem(problem: str) -> Dict[str, Any]:
 
     plan_start_time = time.time()
     try:
-        state, plan_obj = plan(problem)
+        state, plan_obj, plan_cost = plan(problem)
     except Exception as e:
         return {
             "success": False,
@@ -35,6 +35,7 @@ def solve_problem(problem: str) -> Dict[str, Any]:
             "total_time": time.time() - problem_start_time,
             "plan_time": 0,
             "execution_time": 0,
+            "plan_cost": 0,
             "total_cost": 0
         }
 
@@ -44,7 +45,7 @@ def solve_problem(problem: str) -> Dict[str, Any]:
     print(f"  Domain: {state.domain}")
     print(f"  Approach: {plan_obj.approach}")
     print(f"  Target: {plan_obj.final_output}")
-    print(f"  Planning time: {plan_time:.2f}s\n")
+    print(f"  Planning time: {plan_time:.2f}s | Cost: ${plan_cost:.4f}\n")
 
     # Step 2: Execute each step
     print("="*60)
@@ -78,7 +79,9 @@ def solve_problem(problem: str) -> Dict[str, Any]:
                 "total_time": time.time() - problem_start_time,
                 "plan_time": plan_time,
                 "execution_time": time.time() - execution_start_time,
-                "total_cost": total_cost
+                "plan_cost": plan_cost,
+                "execution_cost": total_cost,
+                "total_cost": plan_cost + total_cost
             }
 
         # Update state
@@ -108,10 +111,10 @@ def solve_problem(problem: str) -> Dict[str, Any]:
     print(f"\n" + "="*60)
     print("STATISTICS")
     print("="*60)
-    print(f"Planning time:    {plan_time:.2f}s")
-    print(f"Execution time:   {execution_time:.2f}s")
+    print(f"Planning time:    {plan_time:.2f}s     | Cost: ${plan_cost:.4f}")
+    print(f"Execution time:   {execution_time:.2f}s    | Cost: ${total_cost:.4f}")
     print(f"Total time:       {total_time:.2f}s")
-    print(f"Total cost:       ${total_cost:.4f}")
+    print(f"Total cost:       ${plan_cost + total_cost:.4f}")
     print(f"Cost per step:    ${total_cost / len(plan_obj.steps):.4f}")
 
     return {
@@ -124,7 +127,9 @@ def solve_problem(problem: str) -> Dict[str, Any]:
         "total_time": total_time,
         "plan_time": plan_time,
         "execution_time": execution_time,
-        "total_cost": total_cost
+        "plan_cost": plan_cost,
+        "execution_cost": total_cost,
+        "total_cost": plan_cost + total_cost
     }
 
 

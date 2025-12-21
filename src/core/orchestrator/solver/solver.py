@@ -1,7 +1,7 @@
 import os
 import json
 import asyncio
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 from dotenv import load_dotenv
 from openai import OpenAI
 import importlib.util
@@ -100,11 +100,13 @@ def solve_step(step: Step, state: StateObject) -> Tuple[bool, Optional[float], O
 
 def _build_extract_prompt(step: Step, state: StateObject) -> str:
     """Build prompt for extract operations"""
-    return f"""Extract the value for '{step.output}' from this problem:
+    var = state.variables[step.output]
+
+    base_prompt = f"""Extract the value for '{step.output}' from this problem:
 
 Problem: {state.problem_text}
 
-Variable: {step.output} ({state.variables[step.output].description})
+Variable: {step.output} ({var.description})
 Expected unit: {step.expected_unit}
 Hint: {step.justification}
 
@@ -142,6 +144,20 @@ print(f"{{c}} {{unit}}")
 
 Generate the code."""
 
+    if step.is_symbolic:
+        symbolic_section = """
+
+IMPORTANT: This is a SYMBOLIC variable.
+- The variable '{step.output}' is symbolic (e.g., "M", "u", "sigma") not a numeric value
+- Use sympy to define it as a symbol: sp.Symbol('{step.output}')
+- Print the symbol name as a string
+- Format: print(f"{{'{step.output}'}} {{unit}}")
+- Example output: "M kg" (the string "M", not a numeric value)
+"""
+        return base_prompt + symbolic_section
+    else:
+        return base_prompt
+
 
 def _build_calculate_prompt(step: Step, state: StateObject) -> str:
     """Build prompt for calculate operations"""
@@ -152,7 +168,7 @@ def _build_calculate_prompt(step: Step, state: StateObject) -> str:
         var = state.variables[input_var]
         inputs_text += f"{input_var} = {var.value} {var.unit}\n"
 
-    return f"""Perform this calculation:
+    base_prompt = f"""Perform this calculation:
 
 Inputs:
 {inputs_text}
@@ -189,6 +205,35 @@ print(f"{{v}} {{unit}}")
 
 Generate the code."""
 
+    if step.is_symbolic:
+        symbolic_section = """
+
+IMPORTANT: This is a SYMBOLIC calculation.
+- Use sympy: sp.Symbol(), sp.symbols(), sp.simplify(), sp.solve(), sp.integrate(), sp.diff(), etc.
+- Define symbolic variables for inputs that are strings (e.g., M, u, t)
+- ALWAYS simplify the result with sp.simplify() before printing
+- Convert sympy expression to string with str()
+- Format: print(f"{{str(sp.simplify(result))}} {{unit}}")
+- Example output: "M*u*t/(M + sigma*t) m/s"
+
+Example of symbolic calculation:
+```python
+import sympy as sp
+
+M, u, sigma, t = sp.symbols('M u sigma t', positive=True, real=True)
+
+# Calculation (momentum conservation example)
+v_t = M*u*t / (M + sigma*t)
+v_t_simplified = sp.simplify(v_t)
+
+unit = "m/s"
+print(f"{{str(v_t_simplified)}} {{unit}}")
+```
+"""
+        return base_prompt + symbolic_section
+    else:
+        return base_prompt
+
 
 def _build_convert_prompt(step: Step, state: StateObject) -> str:
     """Build prompt for convert operations"""
@@ -196,7 +241,7 @@ def _build_convert_prompt(step: Step, state: StateObject) -> str:
     input_var = step.inputs[0]
     source = state.variables[input_var]
 
-    return f"""Convert this value:
+    base_prompt = f"""Convert this value:
 
 Input: {source.value} {source.unit}
 Target unit: {step.expected_unit}
@@ -209,6 +254,19 @@ Available tools:
 - astropy.units (u) for advanced unit handling
 
 Generate the code."""
+
+    if step.is_symbolic:
+        symbolic_section = """
+
+IMPORTANT: This is a SYMBOLIC conversion.
+- The input is a symbolic expression (string), not a numeric value
+- Use sympy for symbolic unit conversion
+- Simplify with sp.simplify() before printing
+- Format: print(f"{{str(sp.simplify(result))}} {{target_unit}}")
+"""
+        return base_prompt + symbolic_section
+    else:
+        return base_prompt
 
 
 def _calculate_cost(completion, model: str) -> float:
@@ -235,13 +293,13 @@ def _calculate_cost(completion, model: str) -> float:
     return input_cost + output_cost
 
 
-def _execute_with_llm(prompt: str) -> Tuple[float, str, str, float]:
+def _execute_with_llm(prompt: str) -> Tuple[Union[float, str], str, str, float]:
     """
     Execute the LLM tool loop to generate and run code.
 
     Returns:
         Tuple of (value, unit, code, cost)
-        - value: Extracted numerical value
+        - value: Numerical value (float) or symbolic expression (str)
         - unit: Unit of the value
         - code: The code that was executed
         - cost: Total cost in USD for this step
@@ -315,28 +373,37 @@ def _execute_with_llm(prompt: str) -> Tuple[float, str, str, float]:
     return value, unit, code, total_cost
 
 
-def _parse_output(output: str) -> Tuple[float, str]:
+def _parse_output(output: str) -> Tuple[Union[float, str], str]:
     """
     Parse execution output to extract value and unit.
-    Expected format: "10.0 m/s"
+    Handles both numeric and symbolic outputs.
+
+    Expected formats:
+    - Numeric: "10.0 m/s" → (10.0, "m/s")
+    - Symbolic: "M*u/t m/s" → ("M*u/t", "m/s")
     """
-    
+
     parts = output.strip().split(None, 1)  # Split on first whitespace
-    
+
     if len(parts) < 2:
         # Try to parse as just a number
         try:
             value = float(parts[0])
             return value, "dimensionless"
-        except:
-            raise ValueError(f"Could not parse output: {output}")
-    
+        except ValueError:
+            # Not a number, treat as symbolic
+            return parts[0], "dimensionless"
+
+    first_token = parts[0]
+    unit = parts[1].strip()
+
     try:
-        value = float(parts[0])
-        unit = parts[1].strip()
+        # Try to parse as numeric
+        value = float(first_token)
         return value, unit
-    except ValueError as e:
-        raise ValueError(f"Could not parse output '{output}': {e}")
+    except ValueError:
+        # Not a number, treat as symbolic expression
+        return first_token, unit
 
 
 # Simple test
