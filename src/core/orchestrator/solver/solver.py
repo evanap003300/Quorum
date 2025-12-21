@@ -28,6 +28,18 @@ client = OpenAI(
     api_key=os.getenv("OPEN_ROUTER_KEY")
 )
 
+# Pricing per 1M tokens (convert to per-token in calculations)
+MODEL_PRICING = {
+    "google/gemini-3-pro-preview": {
+        "input": 2.0,      # $2 per 1M input tokens
+        "output": 12.0,    # $12 per 1M output tokens
+    },
+    "openai/gpt-4.1-mini": {
+        "input": 0.4,      # $0.4 per 1M input tokens
+        "output": 1.6,     # $1.6 per 1M output tokens
+    }
+}
+
 TOOLS = [
     {
         "type": "function",
@@ -49,22 +61,23 @@ TOOLS = [
 ]
 
 
-def solve_step(step: Step, state: StateObject) -> Tuple[bool, Optional[float], Optional[str], Optional[str]]:
+def solve_step(step: Step, state: StateObject) -> Tuple[bool, Optional[float], Optional[str], Optional[str], float]:
     """
     Execute a single atomic step.
-    
+
     Args:
         step: The step to execute
         state: Current problem state with variable values
-        
+
     Returns:
-        Tuple of (success, value, unit, error_message)
+        Tuple of (success, value, unit, error_message, cost)
         - success: True if step executed successfully
         - value: Computed numerical value (None if failed)
         - unit: Unit of the value (None if failed)
         - error_message: Error description (None if success)
+        - cost: USD cost of this step
     """
-    
+
     try:
         # Build prompt based on step type
         if step.operation == "extract":
@@ -74,15 +87,15 @@ def solve_step(step: Step, state: StateObject) -> Tuple[bool, Optional[float], O
         elif step.operation == "convert":
             prompt = _build_convert_prompt(step, state)
         else:
-            return False, None, None, f"Unknown operation: {step.operation}"
-        
+            return False, None, None, f"Unknown operation: {step.operation}", 0.0
+
         # Execute with LLM tool loop
-        value, unit, code = _execute_with_llm(prompt)
-        
-        return True, value, unit, None
-        
+        value, unit, code, cost = _execute_with_llm(prompt)
+
+        return True, value, unit, None, cost
+
     except Exception as e:
-        return False, None, None, str(e)
+        return False, None, None, str(e), 0.0
 
 
 def _build_extract_prompt(step: Step, state: StateObject) -> str:
@@ -198,12 +211,40 @@ Available tools:
 Generate the code."""
 
 
-def _execute_with_llm(prompt: str) -> Tuple[float, str, str]:
+def _calculate_cost(completion, model: str) -> float:
+    """
+    Calculate the cost of a completion based on input/output tokens.
+
+    Args:
+        completion: OpenAI completion object with usage info
+        model: Model name to look up pricing
+
+    Returns:
+        Cost in USD
+    """
+    if model not in MODEL_PRICING:
+        return 0.0
+
+    pricing = MODEL_PRICING[model]
+    usage = completion.usage
+
+    # Calculate cost: (tokens * price_per_million) / 1_000_000
+    input_cost = (usage.prompt_tokens * pricing["input"]) / 1_000_000
+    output_cost = (usage.completion_tokens * pricing["output"]) / 1_000_000
+
+    return input_cost + output_cost
+
+
+def _execute_with_llm(prompt: str) -> Tuple[float, str, str, float]:
     """
     Execute the LLM tool loop to generate and run code.
 
     Returns:
-        Tuple of (value, unit, code)
+        Tuple of (value, unit, code, cost)
+        - value: Extracted numerical value
+        - unit: Unit of the value
+        - code: The code that was executed
+        - cost: Total cost in USD for this step
     """
 
     messages = [
@@ -220,14 +261,19 @@ def _execute_with_llm(prompt: str) -> Tuple[float, str, str]:
     code = None
     output = None
     max_attempts = 3
+    total_cost = 0.0
+    model = "openai/gpt-4.1-mini"
 
     for attempt in range(max_attempts):
         completion = client.chat.completions.create(
-            model="openai/gpt-4.1-mini",
+            model=model,
             messages=messages,
             tools=TOOLS,
             temperature=0.1
         )
+
+        # Track cost
+        total_cost += _calculate_cost(completion, model)
 
         choice = completion.choices[0]
 
@@ -266,7 +312,7 @@ def _execute_with_llm(prompt: str) -> Tuple[float, str, str]:
     # Parse output: expect "value unit" format
     value, unit = _parse_output(output)
 
-    return value, unit, code
+    return value, unit, code, total_cost
 
 
 def _parse_output(output: str) -> Tuple[float, str]:
