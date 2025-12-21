@@ -335,8 +335,10 @@ def _execute_with_llm(prompt: str) -> Tuple[Union[float, str], str, str, float]:
 
         choice = completion.choices[0]
 
-        if choice.finish_reason == "tool_calls":
-            assistant_message = choice.message
+        assistant_message = choice.message
+
+        if choice.finish_reason == "tool_calls" and assistant_message.tool_calls:
+            # Model used a tool - execute it
             messages.append(assistant_message)
 
             for tool_call in assistant_message.tool_calls:
@@ -357,12 +359,30 @@ def _execute_with_llm(prompt: str) -> Tuple[Union[float, str], str, str, float]:
             if output:
                 break
         else:
-            # finish_reason is "stop" - model didn't use tool
-            # Try again, the model might use the tool on next attempt
+            # Model finished without using a tool
+            # Try to extract result from the text response
+            if assistant_message.content:
+                extracted = _extract_result_from_text(assistant_message.content)
+                if extracted:
+                    output = extracted
+                    code = "(No code generated - direct text response)"
+                    break
+
+            # If we couldn't extract anything, retry or give up
             if attempt < max_attempts - 1:
+                # Add the message to history for context on next attempt
+                messages.append({
+                    "role": "assistant",
+                    "content": assistant_message.content or "(No response)"
+                })
+                messages.append({
+                    "role": "user",
+                    "content": "Please try again. Generate a clear result in the format: '<value> <unit>'"
+                })
                 continue
             else:
-                raise ValueError(f"Model did not use tool after {max_attempts} attempts")
+                # Last attempt failed - raise error
+                raise ValueError("Could not generate valid output from model after 3 attempts")
 
     if not output:
         raise ValueError("No output generated from code execution")
@@ -371,6 +391,42 @@ def _execute_with_llm(prompt: str) -> Tuple[Union[float, str], str, str, float]:
     value, unit = _parse_output(output)
 
     return value, unit, code, total_cost
+
+
+def _extract_result_from_text(text: str) -> Optional[str]:
+    """
+    Extract a result from plain text response.
+    Looks for patterns like "M kg", "10.0 m/s", etc.
+    Assumes the first meaningful line or last line contains the result.
+
+    Returns:
+        Extracted result string, or None if no result found
+    """
+    lines = text.strip().split('\n')
+
+    # Try to find a line that looks like "value unit"
+    for line in lines:
+        line = line.strip()
+        # Skip empty lines and lines that are too short
+        if not line or len(line) < 1:
+            continue
+        # Skip lines that look like explanations
+        if line.lower().startswith(('the ', 'this ', 'here', 'example', 'note')):
+            continue
+        if line.endswith(':'):
+            continue
+        # This line might be our answer - check if it has word-like content
+        if line and not line.startswith('{') and not line.startswith('['):
+            # Found something that looks like a result
+            return line
+
+    # If we didn't find anything obvious, return the last non-empty line
+    for line in reversed(lines):
+        line = line.strip()
+        if line:
+            return line
+
+    return None
 
 
 def _parse_output(output: str) -> Tuple[Union[float, str], str]:
