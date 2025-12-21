@@ -95,10 +95,23 @@ Variable: {step.output} ({state.variables[step.output].description})
 Expected unit: {step.expected_unit}
 Hint: {step.justification}
 
-Write Python code that:
-1. Defines the value based on the problem text
-2. Assigns it to variable '{step.output}'
-3. Prints: "<value> <unit>"
+IMPORTANT RULES:
+1. For physical constants (e.g., speed of light, gravity, Planck constant, Boltzmann constant), you MUST use the imported constants libraries, NOT approximations
+2. Use the exact value from sci_constants or astro_constants, never hardcoded values
+3. For problem-given values (like temperatures, distances), extract from the problem text
+4. Always print the output as: "<value> <unit>"
+
+Available constants libraries (already imported):
+- sci_constants: scipy.constants
+  * sci_constants.c = speed of light (299792458 m/s, NOT 3e8)
+  * sci_constants.h = Planck constant (6.62607015e-34 J*s)
+  * sci_constants.k = Boltzmann constant (1.380649e-23 J/K)
+  * sci_constants.G = gravitational constant
+  * sci_constants.g = standard gravity (9.80665 m/s^2)
+  * sci_constants.e = elementary charge
+  * Many more available
+- astro_constants: astropy.constants (e.g., astro_constants.G, astro_constants.c)
+- element: mendeleev (e.g., element('Fe').atomic_mass)
 
 Example for "from rest":
 ```python
@@ -107,18 +120,25 @@ unit = "m/s"
 print(f"{{v0}} {{unit}}")
 ```
 
+Example using a constant:
+```python
+c = sci_constants.c
+unit = "m/s"
+print(f"{{c}} {{unit}}")
+```
+
 Generate the code."""
 
 
 def _build_calculate_prompt(step: Step, state: StateObject) -> str:
     """Build prompt for calculate operations"""
-    
+
     # Get input values
     inputs_text = ""
     for input_var in step.inputs:
         var = state.variables[input_var]
         inputs_text += f"{input_var} = {var.value} {var.unit}\n"
-    
+
     return f"""Perform this calculation:
 
 Inputs:
@@ -128,10 +148,17 @@ Task: {step.description}
 Formula: {step.formula}
 Expected output unit: {step.expected_unit}
 
-Write Python code that:
-1. Defines the input variables
-2. Calculates '{step.output}' using the formula
-3. Prints: "<value> <unit>"
+IMPORTANT RULES:
+1. Use the provided input values exactly as given
+2. If any physical constants are needed in the formula but not in inputs, use sci_constants or astro_constants
+3. Never use approximations - always use library constants for physical values
+4. Perform the calculation precisely using the formula
+5. Print the result as: "<value> <unit>"
+
+Available constants libraries (already imported):
+- sci_constants: scipy.constants (e.g., sci_constants.c, sci_constants.h, sci_constants.G)
+- astro_constants: astropy.constants for astronomical constants
+- u: astropy.units for unit handling
 
 Example:
 ```python
@@ -152,10 +179,10 @@ Generate the code."""
 
 def _build_convert_prompt(step: Step, state: StateObject) -> str:
     """Build prompt for convert operations"""
-    
+
     input_var = step.inputs[0]
     source = state.variables[input_var]
-    
+
     return f"""Convert this value:
 
 Input: {source.value} {source.unit}
@@ -163,7 +190,10 @@ Target unit: {step.expected_unit}
 
 Write Python code to convert and print: "<value> <unit>"
 
-You can use basic conversion factors or the pint library.
+Available tools:
+- pint library (already imported in previous examples)
+- scipy.constants (sci_constants) for physical constants
+- astropy.units (u) for advanced unit handling
 
 Generate the code."""
 
@@ -193,10 +223,9 @@ def _execute_with_llm(prompt: str) -> Tuple[float, str, str]:
 
     for attempt in range(max_attempts):
         completion = client.chat.completions.create(
-            model="google/gemini-3-pro-preview",
+            model="openai/gpt-4.1-mini",
             messages=messages,
             tools=TOOLS,
-            tool_choice="required",  # Force LLM to use a tool
             temperature=0.1
         )
 
@@ -219,9 +248,17 @@ def _execute_with_llm(prompt: str) -> Tuple[float, str, str]:
                         "tool_call_id": tool_call.id,
                         "content": output if output else "(No output generated)"
                     })
+
+            # If we got output, break out of retry loop
+            if output:
+                break
         else:
-            # Should not reach here with tool_choice="required", but handle it
-            raise ValueError(f"Unexpected finish reason: {choice.finish_reason}")
+            # finish_reason is "stop" - model didn't use tool
+            # Try again, the model might use the tool on next attempt
+            if attempt < max_attempts - 1:
+                continue
+            else:
+                raise ValueError(f"Model did not use tool after {max_attempts} attempts")
 
     if not output:
         raise ValueError("No output generated from code execution")

@@ -94,9 +94,7 @@ def test_orchestrator():
     """Test the orchestrator on sample problems"""
     
     problems = [
-        "A car accelerates from rest at 2 m/s² for 5 seconds. What is its final velocity?",
-        "A ball is thrown upward at 20 m/s. How high does it go?",
-        "A 5 kg object is pushed with 10 N of force. What is its acceleration?"
+        "Compare the energy output of a black-body radiator (such as an incandescent lamp) at two different wavelengths by calculating the ratio of the energy output at 450 nm (blue light) to that at 700 nm (red light) at 298 K. Use the Planck distribution."
     ]
     
     for i, problem in enumerate(problems, 1):
