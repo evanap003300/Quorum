@@ -11,6 +11,11 @@ MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB limit
 
 # Model pricing (per 1M tokens)
 MODEL_PRICING = {
+    "gpt-4o": {
+        "input": 2.50,      # $2.50 per 1M input tokens
+        "output": 10.0,     # $10 per 1M output tokens
+        "image": 0.003613   # $0.003613 per image
+    },
     "openai/gpt-4o": {
         "input": 2.50,      # $2.50 per 1M input tokens
         "output": 10.0,     # $10 per 1M output tokens
@@ -18,28 +23,13 @@ MODEL_PRICING = {
     }
 }
 
-VISION_PROMPT = """Analyze this physics or mathematics problem image and extract all information.
-
-**PROBLEM TEXT**: The complete textual problem statement
-- Include all given values with units
-- Include the question being asked
-- Preserve mathematical notation as plain text
-
-**DIAGRAM CONTEXT**: Description of visual elements
-- Diagrams, graphs, or figures
-- Geometric configurations
-- Visual relationships between elements
-- Labels and annotations
-
-Output EXACTLY in this format:
+VISION_PROMPT = """Extract the problem from this image in two parts:
 
 PROBLEM TEXT:
-[Complete problem statement here]
+Write out the complete problem statement, including all given values, units, and the question being asked.
 
 DIAGRAM CONTEXT:
-[Description of visual elements, or "None" if no diagrams]
-
-Be precise and complete. Extract ALL information visible in the image."""
+Describe any diagrams, figures, or visual elements you see. If there are no diagrams, write "None"."""
 
 
 def _validate_image(image_path: str) -> None:
@@ -97,12 +87,16 @@ def _call_vision_api(base64_image: str, mime_type: str) -> Tuple[str, float]:
     """
     load_dotenv()
 
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.getenv("OPEN_ROUTER_KEY")
-    )
-
-    model = "openai/gpt-4o"
+    # Prefer direct OpenAI API for vision, fall back to OpenRouter
+    if os.getenv("OPENAI_API_KEY"):
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        model = "gpt-4o"
+    else:
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.getenv("OPEN_ROUTER_KEY")
+        )
+        model = "openai/gpt-4o"
 
     completion = client.chat.completions.create(
         model=model,

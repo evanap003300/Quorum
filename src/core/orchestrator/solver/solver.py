@@ -12,6 +12,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from planner.schema import Step, StateObject
 
+try:
+    from e2b_code_interpreter import Sandbox
+except ImportError:
+    Sandbox = None
+
 # Import python interpreter
 spec = importlib.util.spec_from_file_location(
     "python_interpreter_e2b",
@@ -19,14 +24,34 @@ spec = importlib.util.spec_from_file_location(
 )
 python_interpreter_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(python_interpreter_module)
-run_python = python_interpreter_module.run
+_run_python_impl = python_interpreter_module.run
+
+async def run_python(code: str, sandbox: Optional["Sandbox"] = None) -> str:
+    """
+    Execute Python code in a sandbox.
+
+    Args:
+        code: Python code to execute
+        sandbox: Optional existing sandbox. If None, creates and destroys per call.
+
+    Returns:
+        Output from code execution
+    """
+    return await _run_python_impl(code, sandbox)
 
 load_dotenv()
 
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPEN_ROUTER_KEY")
-)
+# Prefer direct OpenAI API for better latency, fall back to OpenRouter
+if os.getenv("OPENAI_API_KEY"):
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    _using_direct_api = True
+else:
+    # Fallback to OpenRouter
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=os.getenv("OPEN_ROUTER_KEY")
+    )
+    _using_direct_api = False
 
 # Pricing per 1M tokens (convert to per-token in calculations)
 MODEL_PRICING = {
@@ -37,6 +62,10 @@ MODEL_PRICING = {
     "openai/gpt-4.1-mini": {
         "input": 0.4,      # $0.4 per 1M input tokens
         "output": 1.6,     # $1.6 per 1M output tokens
+    },
+    "gpt-4.1-mini-2025-04-14": {
+        "input": 0.4,      # $0.40 per 1M input tokens
+        "output": 1.6,     # $1.60 per 1M output tokens
     }
 }
 
@@ -61,13 +90,14 @@ TOOLS = [
 ]
 
 
-def solve_step(step: Step, state: StateObject) -> Tuple[bool, Optional[Union[float, str, dict]], Optional[Union[str, dict]], Optional[str], float]:
+def solve_step(step: Step, state: StateObject, sandbox: Optional["Sandbox"] = None) -> Tuple[bool, Optional[Union[float, str, dict]], Optional[Union[str, dict]], Optional[str], float]:
     """
     Execute a single atomic step.
 
     Args:
         step: The step to execute
         state: Current problem state with variable values
+        sandbox: Optional existing sandbox to reuse. If None, creates new sandbox per execution.
 
     Returns:
         For single-output steps: Tuple of (success, value, unit, error_message, cost)
@@ -96,9 +126,9 @@ def solve_step(step: Step, state: StateObject) -> Tuple[bool, Optional[Union[flo
 
         # Execute with LLM tool loop
         if is_multi_output:
-            values, units, code, cost = _execute_with_llm_multi_output(prompt, outputs, step, state)
+            values, units, code, cost = _execute_with_llm_multi_output(prompt, outputs, step, state, sandbox)
         else:
-            value, unit, code, cost = _execute_with_llm(prompt)
+            value, unit, code, cost = _execute_with_llm(prompt, sandbox)
             values, units = value, unit
 
         return True, values, units, None, cost
@@ -259,9 +289,13 @@ def _calculate_cost(completion, model: str) -> float:
     return input_cost + output_cost
 
 
-def _execute_with_llm(prompt: str) -> Tuple[Union[float, str], str, str, float]:
+def _execute_with_llm(prompt: str, sandbox: Optional["Sandbox"] = None) -> Tuple[Union[float, str], str, str, float]:
     """
     Execute the LLM tool loop to generate and run code.
+
+    Args:
+        prompt: The prompt to send to LLM
+        sandbox: Optional existing sandbox to reuse
 
     Returns:
         Tuple of (value, unit, code, cost)
@@ -286,14 +320,15 @@ def _execute_with_llm(prompt: str) -> Tuple[Union[float, str], str, str, float]:
     output = None
     max_attempts = 3
     total_cost = 0.0
-    model = "openai/gpt-4.1-mini"
+    # Use gpt-4.1-mini-2025-04-14 for better code generation and variable naming
+    model = "gpt-4.1-mini-2025-04-14" if _using_direct_api else "openai/gpt-4.1-mini"
 
     for attempt in range(max_attempts):
         completion = client.chat.completions.create(
             model=model,
             messages=messages,
             tools=TOOLS,
-            temperature=0.1
+            temperature=0.1  # Slight randomness helps avoid degenerate code generation
         )
 
         # Track cost
@@ -313,7 +348,7 @@ def _execute_with_llm(prompt: str) -> Tuple[Union[float, str], str, str, float]:
                     code = args["code"]
 
                     # Execute the code
-                    output = asyncio.run(run_python(code))
+                    output = asyncio.run(run_python(code, sandbox))
 
                     messages.append({
                         "role": "tool",
@@ -359,7 +394,7 @@ def _execute_with_llm(prompt: str) -> Tuple[Union[float, str], str, str, float]:
     return value, unit, code, total_cost
 
 
-def _execute_with_llm_multi_output(prompt: str, outputs: List[str], step: Step, state: StateObject) -> Tuple[dict, dict, str, float]:
+def _execute_with_llm_multi_output(prompt: str, outputs: List[str], step: Step, state: StateObject, sandbox: Optional["Sandbox"] = None) -> Tuple[dict, dict, str, float]:
     """
     Execute the LLM tool loop for multi-output extraction.
 
@@ -368,6 +403,7 @@ def _execute_with_llm_multi_output(prompt: str, outputs: List[str], step: Step, 
         outputs: List of variable names to extract
         step: The step being executed
         state: Current state for looking up variable info
+        sandbox: Optional existing sandbox to reuse
 
     Returns:
         Tuple of (values_dict, units_dict, code, cost)
@@ -392,14 +428,15 @@ def _execute_with_llm_multi_output(prompt: str, outputs: List[str], step: Step, 
     output = None
     max_attempts = 3
     total_cost = 0.0
-    model = "openai/gpt-4.1-mini"
+    # Use gpt-4.1-mini-2025-04-14 for better code generation and variable naming
+    model = "gpt-4.1-mini-2025-04-14" if _using_direct_api else "openai/gpt-4.1-mini"
 
     for attempt in range(max_attempts):
         completion = client.chat.completions.create(
             model=model,
             messages=messages,
             tools=TOOLS,
-            temperature=0.1
+            temperature=0.1  # Slight randomness helps avoid degenerate code generation
         )
 
         # Track cost
@@ -419,7 +456,7 @@ def _execute_with_llm_multi_output(prompt: str, outputs: List[str], step: Step, 
                     code = args["code"]
 
                     # Execute the code
-                    output = asyncio.run(run_python(code))
+                    output = asyncio.run(run_python(code, sandbox))
 
                     messages.append({
                         "role": "tool",

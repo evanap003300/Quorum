@@ -1,6 +1,8 @@
 import os
 import sys
 import time
+import asyncio
+import importlib.util
 from typing import Dict, Any, Optional
 
 # Add orchestrator directory to path for imports
@@ -10,6 +12,26 @@ from planner.planner import plan
 from solver.solver import solve_step, _validate_result
 from planner.schema import StateObject, Plan
 from vision import analyze_problem_image
+
+# Import Sandbox and init_sandbox using importlib (handles filename with dash)
+Sandbox = None
+init_sandbox = None
+
+try:
+    from e2b_code_interpreter import Sandbox
+
+    # Use importlib to handle python_interpreter-e2b (has dash, can't be imported normally)
+    spec = importlib.util.spec_from_file_location(
+        "python_interpreter_e2b",
+        os.path.join(os.path.dirname(__file__), "solver", "python_interpreter-e2b", "main.py")
+    )
+    if spec and spec.loader:
+        python_interpreter_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(python_interpreter_module)
+        init_sandbox = getattr(python_interpreter_module, 'init_sandbox', None)
+except Exception:
+    # Silently fall back - system will work with per-step sandboxes
+    pass
 
 
 def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[str, Any]:
@@ -110,6 +132,28 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
 
     execution_start_time = time.time()
     total_cost = 0.0
+    sandbox = None
+
+    # Create and initialize hot sandbox if available
+    if Sandbox is None or init_sandbox is None:
+        print(f"⚠ Hot sandbox unavailable (Sandbox={Sandbox is not None}, init={init_sandbox is not None})")
+        print(f"  Using per-step sandboxes (slower - ~20s per step)\n")
+        sandbox = None
+    else:
+        try:
+            sandbox = Sandbox()
+            asyncio.run(init_sandbox(sandbox))
+            print(f"✓ Created hot sandbox - reusing across all steps")
+            print(f"  Expected speedup: 60-90% faster per step\n")
+        except Exception as e:
+            print(f"⚠ Hot sandbox creation failed: {e}")
+            print(f"  Falling back to per-step sandboxes (slower - ~20s per step)\n")
+            if sandbox:
+                try:
+                    sandbox.kill()
+                except:
+                    pass
+            sandbox = None
 
     for i, step in enumerate(plan_obj.steps, 1):
         outputs = step.get_outputs()
@@ -121,13 +165,19 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
         print(f"  Output: {output_info} ({expected_unit_info})")
 
         step_start_time = time.time()
-        # Solve this step
-        success, value, unit, error, cost = solve_step(step, state)
+        # Solve this step (passing hot sandbox)
+        success, value, unit, error, cost = solve_step(step, state, sandbox)
         step_time = time.time() - step_start_time
         total_cost += cost
 
         if not success:
             print(f"  ✗ FAILED: {error}")
+            # Cleanup sandbox before returning
+            if sandbox:
+                try:
+                    sandbox.kill()
+                except:
+                    pass
             return {
                 "success": False,
                 "error": f"Step {step.step_id} failed: {error}",
@@ -155,6 +205,12 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
                     is_valid, error_msg = _validate_result(value[var_name], unit[var_name], step, state)
                     if not is_valid:
                         print(f"  ✗ VALIDATION FAILED: {error_msg}")
+                        # Cleanup sandbox before returning
+                        if sandbox:
+                            try:
+                                sandbox.kill()
+                            except:
+                                pass
                         return {
                             "success": False,
                             "error": f"Step {step.step_id} failed validation: {error_msg}",
@@ -189,6 +245,12 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
             is_valid, error_msg = _validate_result(value, unit, step, state)
             if not is_valid:
                 print(f"  ✗ VALIDATION FAILED: {error_msg}")
+                # Cleanup sandbox before returning
+                if sandbox:
+                    try:
+                        sandbox.kill()
+                    except:
+                        pass
                 return {
                     "success": False,
                     "error": f"Step {step.step_id} failed validation: {error_msg}",
@@ -218,6 +280,13 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
         print(f"    Time: {step_time:.2f}s | Cost: ${cost:.4f}")
 
     execution_time = time.time() - execution_start_time
+
+    # Cleanup hot sandbox after all steps complete
+    if sandbox:
+        try:
+            sandbox.kill()
+        except:
+            pass
 
     # Step 3: Extract final answer
     print("\n" + "="*60)
