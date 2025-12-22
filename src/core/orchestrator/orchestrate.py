@@ -199,7 +199,9 @@ def test_orchestrator():
     """Test the orchestrator on sample problems"""
     
     problems = [
-        """A rubber band with initial length L has one end tied to a wall. At t = 0, the other end is pulled away from the wall at speed V (assume that the rubber band stretches uniformly). At the same time, an ant located at the end not attached to the wall begins to crawl toward the wall, with speed u relative to the band. Will the ant reach the wall? If so, how much time will it take?"""
+        """A ball is thrown at speed v from zero height on level ground. At what angle should
+it be thrown so that the distance traveled through the air is maximum. (You will
+have to solve something numerically.)"""
     ]
     
     for i, problem in enumerate(problems, 1):

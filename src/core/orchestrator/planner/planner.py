@@ -65,7 +65,13 @@ PLANNER_PROMPT = """You are an expert physics and mathematics problem planner. Y
 
 **Critical Rules:**
 
-1. **BATCHED EXTRACTION STEPS**: For extraction-only operations, batch multiple variables into single steps
+1. **JUSTIFICATION LENGTH**: MUST be 150 characters or fewer
+   - Keep justifications BRIEF and CONCISE
+   - Example GOOD (96 chars): "All values given directly in problem: from rest (v0=0), 2 m/s² (a), 5 s (t)"
+   - Example BAD (too long): "We need to find the maximum distance traveled through the air by maximizing the arc length with respect to the angle, which requires solving a transcendental equation numerically"
+   - If your justification exceeds 150 characters, SHORTEN IT
+
+2. **BATCHED EXTRACTION STEPS**: For extraction-only operations, batch multiple variables into single steps
    - If extracting v0, a, t from problem text → create ONE extract step with outputs: ["v0", "a", "t"]
    - This reduces LLM calls and improves efficiency
    - Only batch extractions that come from the problem text (don't batch with calculations)
@@ -76,28 +82,28 @@ PLANNER_PROMPT = """You are an expert physics and mathematics problem planner. Y
    - "calculate" = perform one mathematical operation
    - "convert" = change units
 
-2. **Variable naming**: Use clear, standard physics notation
+3. **Variable naming**: Use clear, standard physics notation
    - Good: v0, v_f, theta, F_net, delta_x
    - Bad: velocity1, finalvel, angle_in_degrees
 
-3. **Units**: Always use SI units or standard physics units
+4. **Units**: Always use SI units or standard physics units
    - Good: m/s, kg, N, J, rad, K
    - Bad: mph, pounds, calories, degrees
 
-4. **Dependencies**: List inputs in the order needed for calculation
+5. **Dependencies**: List inputs in the order needed for calculation
 
-5. **Extract operations**: Use these to pull givens from problem text
+6. **Extract operations**: Use these to pull givens from problem text
    - Even if value is implicit (e.g., "from rest" → v0 = 0)
    - BATCH multiple extractions when they're all just pulling from problem text
    - Separate extractions only when they depend on calculations
 
-6. **Calculate operations**: Include the formula being used
+7. **Calculate operations**: Include the formula being used
    - Formula should use the variable names from inputs/output
    - Example: "v = v0 + a*t" not "final = initial + acceleration*time"
 
-7. **All variables**: Include EVERY variable needed (givens, intermediates, final answer)
+8. **All variables**: Include EVERY variable needed (givens, intermediates, final answer)
 
-8. **Symbolic vs Numeric Detection**:
+9. **Symbolic vs Numeric Detection**:
    - Analyze whether each variable has a concrete numeric value in the problem text
    - Numeric: "mass M = 5 kg" or "5 kg object" → value: 5, is_symbolic: false
    - Symbolic: "mass M" or "of mass M" (no value given) → value: null, is_symbolic: true
