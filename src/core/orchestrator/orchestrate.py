@@ -259,11 +259,21 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
 
 def test_orchestrator():
     """Test the orchestrator on sample problems"""
-    
+
+    # Get absolute path to test image
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    test_image_path = os.path.join(current_dir, 'test_image.png')
+
     problems = [
-        """A ball is thrown at speed v from zero height on level ground. At what angle should
-it be thrown so that the distance traveled through the air is maximum. (You will
-have to solve something numerically.)"""
+        """A block with large mass $M$ slides with speed $V_0$ on a frictionless table towards a wall. It collides elastically with a ball with small mass $m$, which is initially at rest at a distance $L$ from the wall. The ball slides towards the wall, bounces elastically, and then proceeds to bounce back and forth between the block and the wall.
+
+[Diagram Description: A block labeled $M$ moves to the right with velocity $V_0$ toward a small dot labeled $m$. To the right is a vertical wall. The distance between the objects and the wall is labeled $L$.]
+
+(a) How close does the block come to the wall?
+
+(b) How many times does the ball bounce off the block, by the time the block makes its closest approach to the wall?
+
+Assume that $M \\gg m$, and give your answers to leading order in $m/M$."""
     ]
     
     for i, problem in enumerate(problems, 1):
@@ -271,7 +281,7 @@ have to solve something numerically.)"""
         print(f"PROBLEM {i}")
         print("="*70)
         
-        result = solve_problem(problem)
+        result = solve_problem(problem, image_path=test_image_path)
         
         if result["success"]:
             print(f"\n✓ SUCCESS: {result['final_answer']} {result['final_unit']}")
