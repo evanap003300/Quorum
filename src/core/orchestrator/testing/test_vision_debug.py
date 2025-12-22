@@ -25,10 +25,16 @@ if openai_key:
     print(f"  Key starts with: {openai_key[:10]}...")
 
 # Read and encode image
-image_path = "/Users/evanphillips/iCloud Drive (Archive)/Documents/Documents - Mac/Programming/accurate_problem_solver/src/core/orchestrator/test_image.png"
+# Find test_image.png in the orchestrator directory
+orchestrator_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+image_path = os.path.join(orchestrator_dir, "test_image.png")
 print(f"\nImage path: {image_path}")
 print(f"Image exists: {Path(image_path).exists()}")
-print(f"Image size: {Path(image_path).stat().st_size} bytes")
+if Path(image_path).exists():
+    print(f"Image size: {Path(image_path).stat().st_size} bytes")
+else:
+    print("ERROR: test_image.png not found in orchestrator directory")
+    exit(1)
 
 with open(image_path, 'rb') as f:
     image_data = f.read()
