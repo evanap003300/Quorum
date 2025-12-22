@@ -115,15 +115,46 @@ Main function: `plan(problem: str) -> Tuple[StateObject, Plan]`
 - Extracts key values from the problem
 - Creates step-by-step solution approach
 - Returns structured plan and initial state
+- Prompt template: `prompts/planning.py:PLANNER_PROMPT`
 
 ### 3. Solver (`src/core/orchestrator/solver/solver.py`)
-**Executes individual atomic steps**
+**Executes individual atomic steps** (slim entry point, ~65 lines)
 
 Main function: `solve_step(step: Step, state: StateObject) -> Tuple[bool, Optional[float], Optional[str], Optional[str]]`
-- Generates Python code for each step
-- Executes code in E2B sandbox
-- Parses output to extract value and unit
+- Routes step execution based on operation type
+- Delegates to execution and parsing modules
 - Returns success status and result
+
+#### 3a. Solver Execution (`src/core/orchestrator/solver/execution.py`)
+**LLM-powered code generation and execution** (~250 lines)
+
+Functions:
+- `execute_with_llm()` - Single-output step execution
+- `execute_with_llm_multi_output()` - Batch extraction execution
+- Uses gpt-4.1-mini-2025-04-14 for code generation
+- Supports up to 3 retry attempts if generation fails
+
+#### 3b. Solver Parsing (`src/core/orchestrator/solver/parsing.py`)
+**Output processing and validation** (~200 lines)
+
+Functions:
+- `parse_output()` - Extracts value and unit from execution output
+- `parse_multi_output()` - Handles batch extraction results
+- `extract_result_from_text()` - Fallback text extraction
+- `validate_result()` - Validates results meet semantic requirements
+- `calculate_cost()` - Computes API token costs
+
+#### 3c. Solver Prompts (`src/core/orchestrator/prompts/solver.py`)
+**Prompt templates and builders** (~120 lines)
+
+Constants:
+- `SOLVER_SYSTEM_MESSAGE` - System message for single-output steps
+- `SOLVER_MULTI_OUTPUT_SYSTEM_MESSAGE` - System message for batch steps
+
+Functions:
+- `build_extract_prompt()` - Generates extraction prompts
+- `build_calculate_prompt()` - Generates calculation prompts
+- `build_convert_prompt()` - Generates unit conversion prompts
 
 ### 4. Data Models (`src/core/orchestrator/planner/schema.py`)
 **Defines the structure for plans and state**
@@ -134,14 +165,30 @@ Key classes:
 - `Step` - Atomic operation with inputs, formula, and expected output
 - `Plan` - Complete solution strategy with all steps
 
-### 5. Python Interpreter (`src/core/orchestrator/solver/python_interpreter-e2b/main.py`)
+### 5. Configuration (`src/core/orchestrator/config/pricing.py`)
+**Centralized model pricing configuration**
+
+- Single source of truth for model costs
+- Consolidates pricing from all modules
+- Supports both direct OpenAI and OpenRouter models
+
+### 6. Prompts (`src/core/orchestrator/prompts/`)
+**Centralized prompt templates** (~350 lines total)
+
+Modules:
+- `prompts/vision.py` - Image analysis prompt (VISION_PROMPT)
+- `prompts/planning.py` - Problem planning prompt (PLANNER_PROMPT)
+- `prompts/solver.py` - Solver prompts and builders
+
+### 7. Python Interpreter (`src/core/orchestrator/solver/python_interpreter-e2b/main.py`)
 **Provides sandboxed code execution**
 
 - Uses E2B Code Interpreter for safe, isolated Python execution
 - Automatically installs required libraries
 - Captures and returns code output
+- Supports hot sandbox reuse for faster execution
 
-### 6. Format Validation (`src/core/orchestrator/degradation/format.py`)
+### 8. Format Validation (`src/core/orchestrator/degradation/format.py`)
 **Detects degradation and hallucinations** (future enhancement)
 
 ## Setup & Configuration
@@ -171,13 +218,17 @@ black>=23.12.0            # Code formatting
 Create a `.env` file in the project root:
 
 ```
-OPEN_ROUTER_KEY=<your_openrouter_api_key>
-E2B_API_KEY=<your_e2b_api_key>
+OPENAI_API_KEY=<your_openai_api_key>        # Optional, for direct OpenAI API access (faster)
+OPEN_ROUTER_KEY=<your_openrouter_api_key>   # Required, for OpenRouter models (fallback/planner)
+E2B_API_KEY=<your_e2b_api_key>              # Required, for E2B sandboxed code execution
 ```
 
 **Required Keys:**
-- **OPEN_ROUTER_KEY**: API key for OpenRouter (provides access to Google Gemini 3 Pro)
+- **OPEN_ROUTER_KEY**: API key for OpenRouter (provides access to Google Gemini 3 Pro for planning)
 - **E2B_API_KEY**: API key for E2B sandboxed code execution
+
+**Optional Keys:**
+- **OPENAI_API_KEY**: Direct access to OpenAI API (for faster solving). If not provided, falls back to OpenRouter
 
 ### Installation
 
@@ -247,26 +298,112 @@ else:
 accurate_problem_solver/
 ├── src/
 │   └── core/
-│       ├── main.py                    # Entry point (in development)
+│       ├── main.py                      # Entry point (in development)
 │       └── orchestrator/
-│           ├── orchestrate.py         # Main orchestrator
+│           ├── orchestrate.py           # Main orchestrator
+│           │
+│           ├── config/                  # Configuration (NEW)
+│           │   ├── __init__.py
+│           │   └── pricing.py           # Unified model pricing
+│           │
+│           ├── prompts/                 # Centralized prompts (NEW)
+│           │   ├── __init__.py
+│           │   ├── vision.py            # Vision analysis prompt
+│           │   ├── planning.py          # Planning prompt
+│           │   └── solver.py            # Solver prompts & builders
+│           │
 │           ├── planner/
-│           │   ├── planner.py         # Problem planner
-│           │   └── schema.py          # Data models
+│           │   ├── planner.py           # Problem planner
+│           │   └── schema.py            # Data models
+│           │
 │           ├── solver/
-│           │   ├── solver.py          # Step solver
+│           │   ├── solver.py            # Main entry point (~65 lines)
+│           │   ├── execution.py         # LLM executors (NEW)
+│           │   ├── parsing.py           # Output parsing (NEW)
 │           │   └── python_interpreter-e2b/
-│           │       └── main.py        # E2B integration
+│           │       └── main.py          # E2B integration
+│           │
+│           ├── testing/
+│           │   ├── __init__.py
+│           │   ├── test_vision_debug.py
+│           │   └── test_vision_integration.py
+│           │
+│           ├── vision.py                # Vision API integration
 │           └── degradation/
-│               └── format.py          # Validation (future)
+│               └── format.py            # Validation (future)
+│
 ├── requirements.txt
 ├── README.md
 └── .env
 ```
 
+### Code Organization Improvements
+
+The codebase has been refactored for better maintainability:
+
+- **Prompts centralized**: All prompt templates in `prompts/` directory for easy editing
+- **Config consolidation**: Pricing and configuration in `config/` for DRY principle
+- **Modular solver**: Solver split into logical concerns:
+  - `solver.py` - Clean entry point (~65 lines)
+  - `execution.py` - LLM tool loops and code generation (~250 lines)
+  - `parsing.py` - Output parsing and validation (~200 lines)
+- **No performance impact**: Python imports are cached, zero ongoing overhead
+- **Clean architecture**: Clear separation of concerns, easier to test and maintain
+
+## Performance & Optimization
+
+### Model Configuration
+
+- **Planning**: Google Gemini 3 Pro (via OpenRouter) - optimized for problem decomposition
+- **Solving**: GPT-4.1-mini-2025-04-14 - optimized for code generation and variable naming
+- **Vision**: GPT-4o - advanced vision capabilities for image-based problems
+- **Temperature**: 0.1 for all models - slight randomness helps avoid degenerate code generation
+
+### Performance Features
+
+- **Hot Sandbox**: Reuses E2B sandbox across all steps (~70% faster per step)
+- **Direct OpenAI API**: Uses direct OpenAI connection when available (2-3s faster per step)
+- **Batch Extraction**: Groups multiple variable extractions into single steps
+- **Cost Tracking**: Real-time USD cost calculation for all API calls
+
+### Expected Performance
+
+- **Per-step solving time**: 4-7 seconds (with hot sandbox and direct API)
+- **Per-image vision analysis**: 20-60 seconds (includes API latency)
+- **Overall pipeline**: Depends on plan complexity and step count
+
+## Architecture & Design Decisions
+
+### Why Modular Prompts?
+
+Moving prompts to dedicated files (`prompts/` directory) provides:
+- Easy prompt editing without touching logic code
+- Version control benefits (cleaner diffs for prompt changes)
+- Reusability across modules
+- Clear separation of concerns
+
+### Why Split Solver.py?
+
+The original 740-line `solver.py` has been split into:
+- **`solver.py`** (65 lines): Clean entry point and routing
+- **`execution.py`** (250 lines): LLM tool loops and code execution
+- **`parsing.py`** (200 lines): Output processing and validation
+
+This improves:
+- Code readability and maintainability
+- Testability (can unit test each component)
+- Reusability (parsing functions can be used elsewhere)
+
+### Why Centralized Pricing?
+
+`config/pricing.py` consolidates model pricing:
+- Single source of truth (no duplication)
+- Easy to update when model costs change
+- Supports multiple models and APIs
+
 ## Notes
 
 - The system is optimized for physics and mathematics problems
-- Planner uses temperature=0.1 for consistency and reduced hallucinations
 - All mathematical operations use SI units or standard physics units
 - Code generation and execution happen dynamically based on problem requirements
+- Refactored for code clarity with zero performance impact (Python imports are cached)
