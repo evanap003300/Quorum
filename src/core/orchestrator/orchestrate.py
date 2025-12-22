@@ -9,7 +9,8 @@ from typing import Dict, Any, Optional
 sys.path.insert(0, os.path.dirname(__file__))
 
 from planner.planner import plan
-from solver.solver import solve_step, _validate_result
+from solver.solver import solve_step
+from solver.parsing import validate_result
 from planner.schema import StateObject, Plan
 from vision import analyze_problem_image
 
@@ -202,7 +203,7 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
             for var_name in outputs:
                 if var_name in value and var_name in unit:
                     # Validate result before updating state
-                    is_valid, error_msg = _validate_result(value[var_name], unit[var_name], step, state)
+                    is_valid, error_msg = validate_result(value[var_name], unit[var_name], step, state)
                     if not is_valid:
                         print(f"  ✗ VALIDATION FAILED: {error_msg}")
                         # Cleanup sandbox before returning
@@ -242,7 +243,7 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
             var_name = outputs[0]
 
             # Validate result before updating state
-            is_valid, error_msg = _validate_result(value, unit, step, state)
+            is_valid, error_msg = validate_result(value, unit, step, state)
             if not is_valid:
                 print(f"  ✗ VALIDATION FAILED: {error_msg}")
                 # Cleanup sandbox before returning

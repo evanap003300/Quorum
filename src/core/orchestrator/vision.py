@@ -1,35 +1,23 @@
 import os
 import base64
+import sys
 from pathlib import Path
 from typing import Tuple
 from dotenv import load_dotenv
 from openai import OpenAI
 
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(__file__))
+
+from prompts.vision import VISION_PROMPT
+from config.pricing import MODEL_PRICING
+
 # Supported image formats
 SUPPORTED_FORMATS = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB limit
 
-# Model pricing (per 1M tokens)
-MODEL_PRICING = {
-    "gpt-4o": {
-        "input": 2.50,      # $2.50 per 1M input tokens
-        "output": 10.0,     # $10 per 1M output tokens
-        "image": 0.003613   # $0.003613 per image
-    },
-    "openai/gpt-4o": {
-        "input": 2.50,      # $2.50 per 1M input tokens
-        "output": 10.0,     # $10 per 1M output tokens
-        "image": 0.003613   # $0.003613 per image
-    }
-}
-
-VISION_PROMPT = """Extract the problem from this image in two parts:
-
-PROBLEM TEXT:
-Write out the complete problem statement, including all given values, units, and the question being asked.
-
-DIAGRAM CONTEXT:
-Describe any diagrams, figures, or visual elements you see. If there are no diagrams, write "None"."""
+# Vision-specific pricing (image cost per image, model costs from MODEL_PRICING)
+VISION_IMAGE_COST = 0.003613  # $0.003613 per image
 
 
 def _validate_image(image_path: str) -> None:
@@ -122,12 +110,12 @@ def _call_vision_api(base64_image: str, mime_type: str) -> Tuple[str, float]:
     )
 
     # Calculate cost
-    pricing = MODEL_PRICING[model]
+    pricing = MODEL_PRICING.get(model, {"input": 0, "output": 0})
     usage = completion.usage
 
     input_cost = (usage.prompt_tokens * pricing["input"]) / 1_000_000
     output_cost = (usage.completion_tokens * pricing["output"]) / 1_000_000
-    image_cost = pricing["image"]
+    image_cost = VISION_IMAGE_COST
 
     total_cost = input_cost + output_cost + image_cost
 
