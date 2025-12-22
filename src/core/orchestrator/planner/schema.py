@@ -27,11 +27,27 @@ class Step(BaseModel):
     operation: OperationType
     description: str
     inputs: List[str]
-    output: str
+    output: Optional[str] = None  # For backward compatibility - single output
+    outputs: Optional[List[str]] = None  # Multiple outputs (for batched extractions)
     formula: Optional[str] = None
-    expected_unit: str
+    expected_unit: Optional[str] = None  # For single output steps
+    expected_units: Optional[Dict[str, str]] = None  # For multi-output steps: {var_name: unit}
     justification: str = Field(..., max_length=150)
     is_symbolic: bool = False  # True if this step involves symbolic variables
+
+    def get_outputs(self) -> List[str]:
+        """Get outputs as a list, handling both single and multiple outputs."""
+        if self.outputs:
+            return self.outputs
+        elif self.output:
+            return [self.output]
+        return []
+
+    def get_unit(self, var_name: str) -> str:
+        """Get the expected unit for a specific variable."""
+        if self.expected_units and var_name in self.expected_units:
+            return self.expected_units[var_name]
+        return self.expected_unit or ""
 
 class Plan(BaseModel):
     steps: List[Step]

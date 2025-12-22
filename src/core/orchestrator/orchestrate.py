@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 sys.path.insert(0, os.path.dirname(__file__))
 
 from planner.planner import plan
-from solver.solver import solve_step
+from solver.solver import solve_step, _validate_result
 from planner.schema import StateObject, Plan
 
 
@@ -56,9 +56,13 @@ def solve_problem(problem: str) -> Dict[str, Any]:
     total_cost = 0.0
 
     for i, step in enumerate(plan_obj.steps, 1):
+        outputs = step.get_outputs()
+        output_info = ", ".join(outputs) if len(outputs) > 1 else step.output
+        expected_unit_info = str(step.expected_units) if len(outputs) > 1 else step.expected_unit
+
         print(f"\nStep {step.step_id}/{len(plan_obj.steps)}: {step.description}")
         print(f"  Operation: {step.operation}")
-        print(f"  Output: {step.output} ({step.expected_unit})")
+        print(f"  Output: {output_info} ({expected_unit_info})")
 
         step_start_time = time.time()
         # Solve this step
@@ -84,17 +88,75 @@ def solve_problem(problem: str) -> Dict[str, Any]:
                 "total_cost": plan_cost + total_cost
             }
 
-        # Update state
-        state.variables[step.output].value = value
-        state.variables[step.output].unit = unit
-        state.variables[step.output].source_step = step.step_id
+        # Update state - handle both single and multiple outputs
+        if len(outputs) > 1:
+            # Multi-output step
+            assert isinstance(value, dict) and isinstance(unit, dict), "Multi-output step should return dicts"
+            for var_name in outputs:
+                if var_name in value and var_name in unit:
+                    # Validate result before updating state
+                    is_valid, error_msg = _validate_result(value[var_name], unit[var_name], step, state)
+                    if not is_valid:
+                        print(f"  ✗ VALIDATION FAILED: {error_msg}")
+                        return {
+                            "success": False,
+                            "error": f"Step {step.step_id} failed validation: {error_msg}",
+                            "final_answer": None,
+                            "final_unit": None,
+                            "state": state,
+                            "plan": plan_obj,
+                            "failed_at_step": step.step_id,
+                            "total_time": time.time() - problem_start_time,
+                            "plan_time": plan_time,
+                            "execution_time": time.time() - execution_start_time,
+                            "plan_cost": plan_cost,
+                            "execution_cost": total_cost,
+                            "total_cost": plan_cost + total_cost
+                        }
 
-        print(f"  ✓ {step.output} = {value} {unit}")
+                    state.variables[var_name].value = value[var_name]
+                    state.variables[var_name].unit = unit[var_name]
+                    state.variables[var_name].source_step = step.step_id
+                    print(f"  ✓ {var_name} = {value[var_name]} {unit[var_name]}")
+
+                    # Check for unit mismatch
+                    expected_unit = step.get_unit(var_name)
+                    if unit[var_name] != expected_unit:
+                        print(f"    ⚠ WARNING: Expected unit {expected_unit}, got {unit[var_name]}")
+        else:
+            # Single-output step
+            var_name = outputs[0]
+
+            # Validate result before updating state
+            is_valid, error_msg = _validate_result(value, unit, step, state)
+            if not is_valid:
+                print(f"  ✗ VALIDATION FAILED: {error_msg}")
+                return {
+                    "success": False,
+                    "error": f"Step {step.step_id} failed validation: {error_msg}",
+                    "final_answer": None,
+                    "final_unit": None,
+                    "state": state,
+                    "plan": plan_obj,
+                    "failed_at_step": step.step_id,
+                    "total_time": time.time() - problem_start_time,
+                    "plan_time": plan_time,
+                    "execution_time": time.time() - execution_start_time,
+                    "plan_cost": plan_cost,
+                    "execution_cost": total_cost,
+                    "total_cost": plan_cost + total_cost
+                }
+
+            state.variables[var_name].value = value
+            state.variables[var_name].unit = unit
+            state.variables[var_name].source_step = step.step_id
+            print(f"  ✓ {var_name} = {value} {unit}")
+
+            # Check for unit mismatch
+            if unit != step.expected_unit:
+                print(f"    ⚠ WARNING: Expected unit {step.expected_unit}, got {unit}")
+
         print(f"    Time: {step_time:.2f}s | Cost: ${cost:.4f}")
-
-        # Check for unit mismatch
-        if unit != step.expected_unit:
-            print(f"  ⚠ WARNING: Expected unit {step.expected_unit}, got {unit}")
 
     execution_time = time.time() - execution_start_time
 
@@ -137,11 +199,7 @@ def test_orchestrator():
     """Test the orchestrator on sample problems"""
     
     problems = [
-        """For some odd reason, you decide to throw baseballs at a car of mass M, which is free
-to move frictionlessly on the ground. You throw the balls at the back of the car at
-speed u, and at a mass rate of σ kg/s (assume the rate is continuous, for simplicity).
-If the car starts at rest, find its speed and position as a function of time, assuming
-that the back window is open, so that the balls collect inside the car."""
+        """A rubber band with initial length L has one end tied to a wall. At t = 0, the other end is pulled away from the wall at speed V (assume that the rubber band stretches uniformly). At the same time, an ant located at the end not attached to the wall begins to crawl toward the wall, with speed u relative to the band. Will the ant reach the wall? If so, how much time will it take?"""
     ]
     
     for i, problem in enumerate(problems, 1):

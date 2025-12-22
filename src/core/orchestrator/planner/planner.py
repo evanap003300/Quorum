@@ -65,8 +65,14 @@ PLANNER_PROMPT = """You are an expert physics and mathematics problem planner. Y
 
 **Critical Rules:**
 
-1. **ATOMIC STEPS**: Each step must do exactly ONE thing
-   - "extract" = get a value from the problem text
+1. **BATCHED EXTRACTION STEPS**: For extraction-only operations, batch multiple variables into single steps
+   - If extracting v0, a, t from problem text → create ONE extract step with outputs: ["v0", "a", "t"]
+   - This reduces LLM calls and improves efficiency
+   - Only batch extractions that come from the problem text (don't batch with calculations)
+   - For MULTI-OUTPUT extract steps:
+     * Use "outputs": ["var1", "var2", "var3"] field (not "output")
+     * Use "expected_units": {"var1": "m/s", "var2": "m/s^2", "var3": "s"} for units
+   - "extract" = get values from the problem text (can be multiple variables)
    - "calculate" = perform one mathematical operation
    - "convert" = change units
 
@@ -82,7 +88,8 @@ PLANNER_PROMPT = """You are an expert physics and mathematics problem planner. Y
 
 5. **Extract operations**: Use these to pull givens from problem text
    - Even if value is implicit (e.g., "from rest" → v0 = 0)
-   - Each extract should get exactly one value
+   - BATCH multiple extractions when they're all just pulling from problem text
+   - Separate extractions only when they depend on calculations
 
 6. **Calculate operations**: Include the formula being used
    - Formula should use the variable names from inputs/output
@@ -127,38 +134,16 @@ Response:
       {
         "step_id": 1,
         "operation": "extract",
-        "description": "Extract initial velocity from 'from rest'",
+        "description": "Extract all initial values from problem text",
         "inputs": [],
-        "output": "v0",
+        "outputs": ["v0", "a", "t"],
         "formula": null,
-        "expected_unit": "m/s",
-        "justification": "Problem states car starts from rest, so v0 = 0",
+        "expected_units": {"v0": "m/s", "a": "m/s^2", "t": "s"},
+        "justification": "All values given directly in problem: from rest (v0=0), 2 m/s² (a), 5 s (t)",
         "is_symbolic": false
       },
       {
         "step_id": 2,
-        "operation": "extract",
-        "description": "Extract acceleration value",
-        "inputs": [],
-        "output": "a",
-        "formula": null,
-        "expected_unit": "m/s^2",
-        "justification": "Given as 2 m/s² in problem statement",
-        "is_symbolic": false
-      },
-      {
-        "step_id": 3,
-        "operation": "extract",
-        "description": "Extract time duration",
-        "inputs": [],
-        "output": "t",
-        "formula": null,
-        "expected_unit": "s",
-        "justification": "Given as 5 seconds in problem statement",
-        "is_symbolic": false
-      },
-      {
-        "step_id": 4,
         "operation": "calculate",
         "description": "Calculate final velocity",
         "inputs": ["v0", "a", "t"],
@@ -170,7 +155,7 @@ Response:
       }
     ],
     "final_output": "v",
-    "approach": "Use kinematic equation v = v0 + at"
+    "approach": "Extract all given values in one step, then apply kinematic equation"
   }
 }
 
@@ -195,38 +180,16 @@ Response:
       {
         "step_id": 1,
         "operation": "extract",
-        "description": "Extract mass",
+        "description": "Extract mass, height, and gravitational acceleration",
         "inputs": [],
-        "output": "m",
+        "outputs": ["m", "h", "g"],
         "formula": null,
-        "expected_unit": "kg",
-        "justification": "Given as 2 kg",
+        "expected_units": {"m": "kg", "h": "m", "g": "m/s^2"},
+        "justification": "Given values: 2 kg (m), 5 m (h), standard g (9.80665 m/s^2)",
         "is_symbolic": false
       },
       {
         "step_id": 2,
-        "operation": "extract",
-        "description": "Extract height",
-        "inputs": [],
-        "output": "h",
-        "formula": null,
-        "expected_unit": "m",
-        "justification": "Given as 5 m",
-        "is_symbolic": false
-      },
-      {
-        "step_id": 3,
-        "operation": "extract",
-        "description": "Use standard gravity",
-        "inputs": [],
-        "output": "g",
-        "formula": null,
-        "expected_unit": "m/s^2",
-        "justification": "Standard Earth gravity = 9.8 m/s^2",
-        "is_symbolic": false
-      },
-      {
-        "step_id": 4,
         "operation": "calculate",
         "description": "Calculate final speed from energy conservation",
         "inputs": ["g", "h"],
@@ -238,7 +201,7 @@ Response:
       }
     ],
     "final_output": "v",
-    "approach": "Conservation of energy: potential energy converts to kinetic energy"
+    "approach": "Extract all constants in one step, then apply energy conservation"
   }
 }
 
@@ -264,49 +227,16 @@ Response:
       {
         "step_id": 1,
         "operation": "extract",
-        "description": "Extract symbolic car mass",
+        "description": "Extract all symbolic variables from problem",
         "inputs": [],
-        "output": "M",
+        "outputs": ["M", "u", "sigma", "t"],
         "formula": null,
-        "expected_unit": "kg",
-        "justification": "Problem uses variable M for car mass",
+        "expected_units": {"M": "kg", "u": "m/s", "sigma": "kg/s", "t": "s"},
+        "justification": "Problem defines: car mass M, ball speed u, mass rate σ, time t (all symbolic)",
         "is_symbolic": true
       },
       {
         "step_id": 2,
-        "operation": "extract",
-        "description": "Extract symbolic ball speed",
-        "inputs": [],
-        "output": "u",
-        "formula": null,
-        "expected_unit": "m/s",
-        "justification": "Problem uses variable u for ball speed",
-        "is_symbolic": true
-      },
-      {
-        "step_id": 3,
-        "operation": "extract",
-        "description": "Extract symbolic mass rate",
-        "inputs": [],
-        "output": "sigma",
-        "formula": null,
-        "expected_unit": "kg/s",
-        "justification": "Problem uses variable σ for mass rate",
-        "is_symbolic": true
-      },
-      {
-        "step_id": 4,
-        "operation": "extract",
-        "description": "Extract time variable",
-        "inputs": [],
-        "output": "t",
-        "formula": null,
-        "expected_unit": "s",
-        "justification": "Time is variable t in symbolic form",
-        "is_symbolic": true
-      },
-      {
-        "step_id": 5,
         "operation": "calculate",
         "description": "Apply momentum conservation to find v(t)",
         "inputs": ["M", "u", "sigma", "t"],
@@ -318,7 +248,7 @@ Response:
       }
     ],
     "final_output": "v_t",
-    "approach": "Use variable mass system and momentum conservation to derive velocity as function of time"
+    "approach": "Extract symbolic variables in one step, then use momentum conservation to derive v(t)"
   }
 }
 
