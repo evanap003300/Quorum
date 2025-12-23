@@ -15,38 +15,50 @@ def build_extract_prompt(step: Step, state: StateObject) -> str:
     # Handle multi-output extraction
     if len(outputs) > 1:
         # Build prompt for extracting multiple variables
-        var_list = ", ".join(outputs)
-
         variables_section = ""
         for var_name in outputs:
             var = state.variables[var_name]
             unit = step.get_unit(var_name)
-            variables_section += f"- {var_name} ({var.description}): Expected unit {unit}\n"
+            variables_section += f"- {var_name}: {var.description} (unit: {unit})\n"
 
-        base_prompt = f"""Extract these variables from the problem:
-
+        base_prompt = f"""EXTRACT ALL THESE VARIABLES:
 {variables_section}
 
-Problem: {state.problem_text}
+PROBLEM STATEMENT:
+{state.problem_text}
 
-Print each variable on a separate line in format: VAR_NAME VALUE UNIT
+WRITE PYTHON CODE that:
+1. Reads the problem above
+2. Identifies the value or symbol for EACH variable from the problem text
+3. PRINTS each variable on a separate line in EXACTLY this format:
 
-Examples:
+   VAR_NAME VALUE UNIT
+
+CRITICAL: You must extract ALL {len(outputs)} variables: {", ".join(outputs)}
+
+OUTPUT EXAMPLES (for symbolic variables):
+m m kg
+M M kg
+R R m
+F F N
+
+OUTPUT EXAMPLES (for numeric values):
 m 5.0 kg
-M 10.0 kg
-theta 30 degree
 g 9.81 m/s**2
 
-Use sci_constants for constants (not approximations).
-Extract from problem text for given values.
-Extract symbols for symbolic variables."""
+RULES:
+- Extract from problem text (do not make up values)
+- Use sci_constants for physical constants
+- For symbolic variables, use the variable name as the VALUE
+- Print EVERY variable, even if they appear later in the problem
+- Each variable must be on its own line"""
 
         if step.is_symbolic:
             symbolic_section = f"""
-
-IMPORTANT: Some variables may be symbolic (not numeric values).
-For symbolic variables, print the symbol name and unit only.
-For numeric values, print the value and unit."""
+THESE ARE SYMBOLIC VARIABLES:
+- Extract the variable symbol (e.g., m, M, R, F) from the problem text
+- The VALUE should be the symbol name itself
+- Include the unit from the problem context"""
             return base_prompt + symbolic_section
         else:
             return base_prompt

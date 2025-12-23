@@ -397,7 +397,7 @@ def test_orchestrator():
     test_image_path = os.path.join(current_dir, 'test_image.png')
 
     problems = [
-        """A block of mass $m$ is placed on a smooth wedge of mass $M$ and angle $\theta$, which is free to slide on a frictionless horizontal floor. Find the acceleration of the wedge."""
+        """A solid cylinder of mass $m$ and radius $R$ rests on top of a long, thin plank of mass $M$. The plank sits on a frictionless horizontal floor. You apply a constant horizontal force $F$ to the PLANK (not the cylinder).The cylinder rolls without slipping relative to the plank.Find the acceleration of the plank ($A$) and the acceleration of the cylinder ($a$).(Note: Assume the static friction is sufficient to prevent slipping between the cylinder and plank)."""
     ]
     
     for i, problem in enumerate(problems, 1):
