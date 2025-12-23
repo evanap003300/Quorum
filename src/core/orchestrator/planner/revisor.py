@@ -3,15 +3,17 @@
 import os
 import json
 import sys
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 from dotenv import load_dotenv
 from openai import OpenAI
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from schema import Plan
 from prompts.revisor import REVISOR_PROMPT
+from solver.parsing import calculate_cost
 
 load_dotenv()
 
@@ -21,7 +23,7 @@ client = OpenAI(
 )
 
 
-def revise_plan(problem: str, original_plan: Plan, critiques: List[Dict[str, Any]]) -> Plan:
+def revise_plan(problem: str, original_plan: Plan, critiques: List[Dict[str, Any]]) -> Tuple[Plan, float]:
     """
     Revise a plan based on critiques from the Physics Lawyer.
 
@@ -31,7 +33,7 @@ def revise_plan(problem: str, original_plan: Plan, critiques: List[Dict[str, Any
         critiques: List of critique dictionaries from the Physics Lawyer
 
     Returns:
-        Revised Plan object with corrections applied
+        Tuple of (Revised Plan object with corrections applied, cost in USD)
     """
     model = "google/gemini-3-pro-preview"
 
@@ -62,6 +64,9 @@ Please revise the plan to address all critiques while maintaining the same JSON 
         response_format={"type": "json_object"}
     )
 
+    # Calculate cost
+    cost = calculate_cost(completion, model)
+
     # Parse revised plan
     raw_response = completion.choices[0].message.content
     revised_data = json.loads(raw_response)
@@ -73,7 +78,7 @@ Please revise the plan to address all critiques while maintaining the same JSON 
     # Reconstruct as Plan object
     revised_plan = Plan(**revised_data)
 
-    return revised_plan
+    return revised_plan, cost
 
 
 def _plan_to_dict(plan: Plan) -> Dict[str, Any]:

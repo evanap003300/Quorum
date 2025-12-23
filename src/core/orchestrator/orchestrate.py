@@ -133,7 +133,7 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
     print("PHYSICS REVIEW")
     print("="*60)
 
-    plan_obj = _review_and_revise_plan(problem, plan_obj, max_revisions=2)
+    plan_obj, review_cost, review_time = _review_and_revise_plan(problem, plan_obj, max_revisions=2)
 
     # Step 2: Execute each step
     print("="*60)
@@ -198,11 +198,13 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
                 "failed_at_step": step.step_id,
                 "total_time": time.time() - problem_start_time,
                 "plan_time": plan_time,
+                "review_time": review_time,
                 "execution_time": time.time() - execution_start_time,
                 "plan_cost": plan_cost,
+                "review_cost": review_cost,
                 "execution_cost": total_cost,
                 "vision_cost": vision_cost,
-                "total_cost": plan_cost + total_cost + vision_cost
+                "total_cost": plan_cost + review_cost + total_cost + vision_cost
             }
 
         # Update state - handle both single and multiple outputs
@@ -231,11 +233,13 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
                             "failed_at_step": step.step_id,
                             "total_time": time.time() - problem_start_time,
                             "plan_time": plan_time,
+                            "review_time": review_time,
                             "execution_time": time.time() - execution_start_time,
                             "plan_cost": plan_cost,
+                            "review_cost": review_cost,
                             "execution_cost": total_cost,
                             "vision_cost": vision_cost,
-                            "total_cost": plan_cost + total_cost + vision_cost
+                            "total_cost": plan_cost + review_cost + total_cost + vision_cost
                         }
 
                     state.variables[var_name].value = value[var_name]
@@ -271,11 +275,13 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
                     "failed_at_step": step.step_id,
                     "total_time": time.time() - problem_start_time,
                     "plan_time": plan_time,
+                    "review_time": review_time,
                     "execution_time": time.time() - execution_start_time,
                     "plan_cost": plan_cost,
+                    "review_cost": review_cost,
                     "execution_cost": total_cost,
                     "vision_cost": vision_cost,
-                    "total_cost": plan_cost + total_cost + vision_cost
+                    "total_cost": plan_cost + review_cost + total_cost + vision_cost
                 }
 
             state.variables[var_name].value = value
@@ -314,9 +320,10 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
     if vision_cost > 0:
         print(f"Vision analysis:  {vision_time:.2f}s     | Cost: ${vision_cost:.4f}")
     print(f"Planning time:    {plan_time:.2f}s     | Cost: ${plan_cost:.4f}")
+    print(f"Physics review:   {review_time:.2f}s     | Cost: ${review_cost:.4f}")
     print(f"Execution time:   {execution_time:.2f}s    | Cost: ${total_cost:.4f}")
     print(f"Total time:       {total_time:.2f}s")
-    print(f"Total cost:       ${plan_cost + total_cost + vision_cost:.4f}")
+    print(f"Total cost:       ${plan_cost + review_cost + total_cost + vision_cost:.4f}")
     print(f"Cost per step:    ${total_cost / len(plan_obj.steps):.4f}")
 
     return {
@@ -328,16 +335,18 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
         "error": None,
         "total_time": total_time,
         "plan_time": plan_time,
+        "review_time": review_time,
         "execution_time": execution_time,
         "plan_cost": plan_cost,
+        "review_cost": review_cost,
         "execution_cost": total_cost,
         "vision_cost": vision_cost,
-        "total_cost": plan_cost + total_cost + vision_cost
+        "total_cost": plan_cost + review_cost + total_cost + vision_cost
     }
 
 
 
-def _review_and_revise_plan(problem: str, plan_obj: Plan, max_revisions: int = 2) -> Plan:
+def _review_and_revise_plan(problem: str, plan_obj: Plan, max_revisions: int = 2):
     """
     Review a plan with the Physics Lawyer and revise if needed.
 
@@ -347,19 +356,27 @@ def _review_and_revise_plan(problem: str, plan_obj: Plan, max_revisions: int = 2
         max_revisions: Maximum number of revision attempts
 
     Returns:
-        The approved or best-effort plan
+        Tuple of (approved or best-effort plan, total review cost, total review time)
     """
+    review_start_time = time.time()
+    total_review_cost = 0.0
+
     for attempt in range(max_revisions):
         print(f"⚖️ Physics Lawyer reviewing plan (Pass {attempt + 1}/{max_revisions})...")
 
         # Audit the plan
-        audit = audit_plan(problem, plan_obj)
+        lawyer_start_time = time.time()
+        audit, lawyer_cost = audit_plan(problem, plan_obj)
+        lawyer_time = time.time() - lawyer_start_time
+        total_review_cost += lawyer_cost
 
         if audit.is_approved:
             print(f"✅ Plan approved by Physics Lawyer.")
             if audit.reasoning:
-                print(f"   Reasoning: {audit.reasoning}\n")
-            return plan_obj
+                print(f"   Reasoning: {audit.reasoning}")
+            print(f"   Time: {lawyer_time:.2f}s | Cost: ${lawyer_cost:.4f}\n")
+            total_review_time = time.time() - review_start_time
+            return plan_obj, total_review_cost, total_review_time
 
         # Plan was rejected - show critiques
         print(f"❌ Physics Lawyer found {len(audit.critiques)} issue(s):")
@@ -370,23 +387,32 @@ def _review_and_revise_plan(problem: str, plan_obj: Plan, max_revisions: int = 2
             correction = critique.get("correction", "No correction suggested")
             print(f"   {severity_icon} Step {step_idx}: {error}")
             print(f"      → Fix: {correction}")
+        print(f"   Time: {lawyer_time:.2f}s | Cost: ${lawyer_cost:.4f}")
 
         # If this is the last attempt, proceed with warning
         if attempt == max_revisions - 1:
             print(f"⚠️ Max revisions reached. Proceeding with best-effort plan.\n")
-            return plan_obj
+            total_review_time = time.time() - review_start_time
+            return plan_obj, total_review_cost, total_review_time
 
         # Otherwise, revise the plan
         print(f"\n🔧 Revisor is patching the plan...")
         try:
-            plan_obj = revise_plan(problem, plan_obj, audit.critiques)
-            print(f"✓ Plan revised. Retrying audit...\n")
+            revisor_start_time = time.time()
+            plan_obj, revisor_cost = revise_plan(problem, plan_obj, audit.critiques)
+            revisor_time = time.time() - revisor_start_time
+            total_review_cost += revisor_cost
+            print(f"✓ Plan revised.")
+            print(f"   Time: {revisor_time:.2f}s | Cost: ${revisor_cost:.4f}")
+            print(f"Retrying audit...\n")
         except Exception as e:
             print(f"⚠️ Revision failed: {e}")
             print(f"   Proceeding with original plan.\n")
-            return plan_obj
+            total_review_time = time.time() - review_start_time
+            return plan_obj, total_review_cost, total_review_time
 
-    return plan_obj
+    total_review_time = time.time() - review_start_time
+    return plan_obj, total_review_cost, total_review_time
 
 
 def test_orchestrator():

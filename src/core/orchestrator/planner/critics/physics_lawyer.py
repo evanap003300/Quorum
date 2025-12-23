@@ -3,7 +3,7 @@
 import os
 import json
 import sys
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
 from prompts.critics import PHYSICS_LAWYER_PROMPT
 from planner.schema import Plan
+from solver.parsing import calculate_cost
 
 load_dotenv()
 
@@ -33,7 +34,7 @@ class AuditResult:
         return f"AuditResult(status={self.status}, critiques={len(self.critiques)})"
 
 
-def audit_plan(problem: str, plan: Plan) -> AuditResult:
+def audit_plan(problem: str, plan: Plan) -> Tuple[AuditResult, float]:
     """
     Audit a plan for physics violations using the Physics Lawyer.
 
@@ -42,7 +43,7 @@ def audit_plan(problem: str, plan: Plan) -> AuditResult:
         plan: The proposed solution plan
 
     Returns:
-        AuditResult with status and specific critiques
+        Tuple of (AuditResult with status and critiques, cost in USD)
     """
     model = "google/gemini-3-pro-preview"
 
@@ -67,11 +68,14 @@ PROPOSED PLAN:
         response_format={"type": "json_object"}
     )
 
+    # Calculate cost
+    cost = calculate_cost(completion, model)
+
     # Parse response
     raw_response = completion.choices[0].message.content
     audit_data = json.loads(raw_response)
 
-    return AuditResult(audit_data)
+    return AuditResult(audit_data), cost
 
 
 def _format_plan_for_audit(plan: Plan) -> str:
