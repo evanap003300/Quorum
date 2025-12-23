@@ -140,7 +140,6 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
     print("EXECUTION")
     print("="*60)
 
-    execution_start_time = time.time()
     total_cost = 0.0
     sandbox = None
 
@@ -164,6 +163,9 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
                 except:
                     pass
             sandbox = None
+
+    # Start timing execution after sandbox is ready
+    execution_start_time = time.time()
 
     for i, step in enumerate(plan_obj.steps, 1):
         outputs = step.get_outputs()
