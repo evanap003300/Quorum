@@ -397,7 +397,7 @@ def test_orchestrator():
     test_image_path = os.path.join(current_dir, 'test_image.png')
 
     problems = [
-        """A solid cylinder of mass $m$ and radius $R$ rests on top of a long, thin plank of mass $M$. The plank sits on a frictionless horizontal floor. You apply a constant horizontal force $F$ to the PLANK (not the cylinder).The cylinder rolls without slipping relative to the plank.Find the acceleration of the plank ($A$) and the acceleration of the cylinder ($a$).(Note: Assume the static friction is sufficient to prevent slipping between the cylinder and plank)."""
+        """A bead of mass $m$ slides without friction on a circular hoop of radius $R$. The hoop lies in a vertical plane and rotates with a constant angular velocity $\omega$ about its vertical diameter. Gravity $g$ acts downward.1. Find the equilibrium angle $\theta_{eq}$ (measured from the bottom of the hoop) where the bead can stay stationary relative to the hoop"""
     ]
     
     for i, problem in enumerate(problems, 1):

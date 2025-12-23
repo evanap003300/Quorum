@@ -47,4 +47,5 @@ IMPORTANT:
 - Return ONLY the corrected Plan JSON
 - Do not include analysis or explanation—just the revised plan
 - Ensure all steps are numbered sequentially (1, 2, 3, ...)
+- Keep each step's justification to MAXIMUM 150 characters (concise and direct)
 """
