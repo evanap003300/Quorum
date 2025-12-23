@@ -12,6 +12,8 @@ from planner.planner import plan
 from solver.solver import solve_step
 from solver.parsing import validate_result
 from planner.schema import StateObject, Plan
+from planner.critics.physics_lawyer import audit_plan
+from planner.revisor import revise_plan
 from vision import analyze_problem_image
 
 # Import Sandbox and init_sandbox using importlib (handles filename with dash)
@@ -125,6 +127,13 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
     print(f"  Approach: {plan_obj.approach}")
     print(f"  Target: {plan_obj.final_output}")
     print(f"  Planning time: {plan_time:.2f}s | Cost: ${plan_cost:.4f}\n")
+
+    # Step 1.5: Review plan with Physics Lawyer
+    print("="*60)
+    print("PHYSICS REVIEW")
+    print("="*60)
+
+    plan_obj = _review_and_revise_plan(problem, plan_obj, max_revisions=2)
 
     # Step 2: Execute each step
     print("="*60)
@@ -327,6 +336,59 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
     }
 
 
+
+def _review_and_revise_plan(problem: str, plan_obj: Plan, max_revisions: int = 2) -> Plan:
+    """
+    Review a plan with the Physics Lawyer and revise if needed.
+
+    Args:
+        problem: The original problem statement
+        plan_obj: The plan to review
+        max_revisions: Maximum number of revision attempts
+
+    Returns:
+        The approved or best-effort plan
+    """
+    for attempt in range(max_revisions):
+        print(f"⚖️ Physics Lawyer reviewing plan (Pass {attempt + 1}/{max_revisions})...")
+
+        # Audit the plan
+        audit = audit_plan(problem, plan_obj)
+
+        if audit.is_approved:
+            print(f"✅ Plan approved by Physics Lawyer.")
+            if audit.reasoning:
+                print(f"   Reasoning: {audit.reasoning}\n")
+            return plan_obj
+
+        # Plan was rejected - show critiques
+        print(f"❌ Physics Lawyer found {len(audit.critiques)} issue(s):")
+        for critique in audit.critiques:
+            severity_icon = "🔴" if critique.get("severity") == "BLOCKING" else "🟡"
+            step_idx = critique.get("step_index", "?")
+            error = critique.get("error", "Unknown error")
+            correction = critique.get("correction", "No correction suggested")
+            print(f"   {severity_icon} Step {step_idx}: {error}")
+            print(f"      → Fix: {correction}")
+
+        # If this is the last attempt, proceed with warning
+        if attempt == max_revisions - 1:
+            print(f"⚠️ Max revisions reached. Proceeding with best-effort plan.\n")
+            return plan_obj
+
+        # Otherwise, revise the plan
+        print(f"\n🔧 Revisor is patching the plan...")
+        try:
+            plan_obj = revise_plan(problem, plan_obj, audit.critiques)
+            print(f"✓ Plan revised. Retrying audit...\n")
+        except Exception as e:
+            print(f"⚠️ Revision failed: {e}")
+            print(f"   Proceeding with original plan.\n")
+            return plan_obj
+
+    return plan_obj
+
+
 def test_orchestrator():
     """Test the orchestrator on sample problems"""
 
@@ -335,15 +397,7 @@ def test_orchestrator():
     test_image_path = os.path.join(current_dir, 'test_image.png')
 
     problems = [
-        """A block with large mass $M$ slides with speed $V_0$ on a frictionless table towards a wall. It collides elastically with a ball with small mass $m$, which is initially at rest at a distance $L$ from the wall. The ball slides towards the wall, bounces elastically, and then proceeds to bounce back and forth between the block and the wall.
-
-[Diagram Description: A block labeled $M$ moves to the right with velocity $V_0$ toward a small dot labeled $m$. To the right is a vertical wall. The distance between the objects and the wall is labeled $L$.]
-
-(a) How close does the block come to the wall?
-
-(b) How many times does the ball bounce off the block, by the time the block makes its closest approach to the wall?
-
-Assume that $M \\gg m$, and give your answers to leading order in $m/M$."""
+        """A block of mass $m$ is placed on a smooth wedge of mass $M$ and angle $\theta$, which is free to slide on a frictionless horizontal floor. Find the acceleration of the wedge."""
     ]
     
     for i, problem in enumerate(problems, 1):
@@ -351,7 +405,7 @@ Assume that $M \\gg m$, and give your answers to leading order in $m/M$."""
         print(f"PROBLEM {i}")
         print("="*70)
         
-        result = solve_problem(problem, image_path=test_image_path)
+        result = solve_problem(problem)
         
         if result["success"]:
             print(f"\n✓ SUCCESS: {result['final_answer']} {result['final_unit']}")

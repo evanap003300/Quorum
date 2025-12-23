@@ -15,6 +15,17 @@ The system uses structured JSON state objects to track assumptions, known values
 
 ## How It Works
 
+### Step 0: Physics Review
+Once a plan is created, the **Physics Lawyer** audits it for conceptual errors:
+
+- Checks for reference frame violations (e.g., absolute vs relative velocity)
+- Validates variable mass systems (F = dp/dt for rockets)
+- Ensures conservation laws are applied correctly
+- Detects small-angle approximation violations
+- Validates unit consistency
+
+If errors are found, the **Revisor** automatically repairs the plan while preserving dependencies. This prevents wasted computation on fundamentally flawed approaches.
+
 ### Step 1: Planning
 When you provide a problem, the **Planner** breaks it down into atomic steps:
 
@@ -117,6 +128,33 @@ Main function: `plan(problem: str) -> Tuple[StateObject, Plan]`
 - Returns structured plan and initial state
 - Prompt template: `prompts/planning.py:PLANNER_PROMPT`
 
+### 2a. Physics Lawyer (`src/core/orchestrator/planner/critics/physics_lawyer.py`)
+**Audits plans for conceptual physics errors**
+
+Main function: `audit_plan(problem: str, plan: Plan) -> AuditResult`
+- Uses Google Gemini 3 Pro for auditing
+- Checks 7 categories of physics violations:
+  1. Reference Frame errors
+  2. Variable Mass systems
+  3. Conservation Law violations
+  4. Approximation errors
+  5. Unit inconsistencies
+  6. Physical constraint violations
+  7. Dependency issues
+- Returns JSON-structured audit results
+- Prompt template: `prompts/critics.py:PHYSICS_LAWYER_PROMPT`
+
+### 2b. Revisor (`src/core/orchestrator/planner/revisor.py`)
+**Repairs flagged plans while preserving dependencies**
+
+Main function: `revise_plan(problem: str, plan: Plan, critiques: List) -> Plan`
+- Uses Google Gemini 3 Pro for plan revision
+- Surgically fixes flagged steps
+- Preserves variable names and units for downstream steps
+- Can insert new intermediate steps if needed
+- Returns corrected plan in same JSON schema
+- Prompt template: `prompts/revisor.py:REVISOR_PROMPT`
+
 ### 3. Solver (`src/core/orchestrator/solver/solver.py`)
 **Executes individual atomic steps** (slim entry point, ~65 lines)
 
@@ -173,12 +211,14 @@ Key classes:
 - Supports both direct OpenAI and OpenRouter models
 
 ### 6. Prompts (`src/core/orchestrator/prompts/`)
-**Centralized prompt templates** (~350 lines total)
+**Centralized prompt templates** (~500 lines total)
 
 Modules:
 - `prompts/vision.py` - Image analysis prompt (VISION_PROMPT)
 - `prompts/planning.py` - Problem planning prompt (PLANNER_PROMPT)
 - `prompts/solver.py` - Solver prompts and builders
+- `prompts/critics.py` - Physics Lawyer audit prompt (PHYSICS_LAWYER_PROMPT)
+- `prompts/revisor.py` - Plan revisor prompt (REVISOR_PROMPT)
 
 ### 7. Python Interpreter (`src/core/orchestrator/solver/python_interpreter-e2b/main.py`)
 **Provides sandboxed code execution**
@@ -278,6 +318,8 @@ else:
 
 - **Atomic Steps**: Each step performs exactly one operation for clarity and debuggability
 - **Structured Planning**: Uses LLM to intelligently decompose problems
+- **Physics Validation**: Physics Lawyer audits plans for conceptual errors before execution
+- **Automatic Repair**: Revisor automatically fixes flagged plans while preserving dependencies
 - **Sandboxed Execution**: All code runs in E2B environment for security
 - **State Tracking**: Maintains complete history of values and assumptions
 - **Error Handling**: Up to 3 retry attempts per step if code generation fails
@@ -286,8 +328,11 @@ else:
 
 ## Roadmap
 
-- Implement MDAP (multi-step degradation analysis process) for error reduction
+- ✅ **Physics Lawyer & Revisor**: Conceptual error detection and automatic repair (COMPLETE)
+- Implement MDAP (multi-step degradation analysis process) for execution-time error reduction
 - Complete format checker for hallucination detection
+- Domain-specific critics (thermodynamics, quantum mechanics, etc.)
+- Interactive correction approval (allow user to review and approve fixes)
 - Benchmarking suite for physics and mathematics problems
 - FastAPI REST endpoint for HTTP access
 - Support for more complex domains (kinematics, energy, forces, etc.)
@@ -314,7 +359,11 @@ accurate_problem_solver/
 │           │
 │           ├── planner/
 │           │   ├── planner.py           # Problem planner
-│           │   └── schema.py            # Data models
+│           │   ├── schema.py            # Data models
+│           │   ├── critics/             # Plan critics (NEW)
+│           │   │   ├── __init__.py
+│           │   │   └── physics_lawyer.py # Physics auditor
+│           │   └── revisor.py           # Plan repair (NEW)
 │           │
 │           ├── solver/
 │           │   ├── solver.py            # Main entry point (~65 lines)
