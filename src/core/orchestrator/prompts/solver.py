@@ -11,6 +11,47 @@ SOLVER_MULTI_OUTPUT_SYSTEM_MESSAGE = "You are a code generator for physics calcu
 def build_extract_prompt(step: Step, state: StateObject) -> str:
     """Build prompt for extract operations"""
     outputs = step.get_outputs()
+
+    # Handle multi-output extraction
+    if len(outputs) > 1:
+        # Build prompt for extracting multiple variables
+        var_list = ", ".join(outputs)
+
+        variables_section = ""
+        for var_name in outputs:
+            var = state.variables[var_name]
+            unit = step.get_unit(var_name)
+            variables_section += f"- {var_name} ({var.description}): Expected unit {unit}\n"
+
+        base_prompt = f"""Extract these variables from the problem:
+
+{variables_section}
+
+Problem: {state.problem_text}
+
+Print each variable on a separate line in format: VAR_NAME VALUE UNIT
+
+Examples:
+m 5.0 kg
+M 10.0 kg
+theta 30 degree
+g 9.81 m/s**2
+
+Use sci_constants for constants (not approximations).
+Extract from problem text for given values.
+Extract symbols for symbolic variables."""
+
+        if step.is_symbolic:
+            symbolic_section = f"""
+
+IMPORTANT: Some variables may be symbolic (not numeric values).
+For symbolic variables, print the symbol name and unit only.
+For numeric values, print the value and unit."""
+            return base_prompt + symbolic_section
+        else:
+            return base_prompt
+
+    # Single variable extraction (original logic)
     var = state.variables[outputs[0]]
 
     base_prompt = f"""Extract {outputs[0]} ({var.description}) from this problem:
