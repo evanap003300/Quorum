@@ -5,21 +5,42 @@ import json
 import sys
 from typing import Dict, List, Any, Tuple
 from dotenv import load_dotenv
-from openai import OpenAI
+import google.generativeai as genai
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
 from prompts.critics import PHYSICS_LAWYER_PROMPT
 from planner.schema import Plan
-from solver.parsing import calculate_cost
+from config.pricing import MODEL_PRICING
 
 load_dotenv()
 
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPEN_ROUTER_KEY")
-)
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+
+
+def _calculate_lawyer_cost(completion, model: str) -> float:
+    """
+    Calculate the cost of a physics lawyer completion based on input/output tokens.
+
+    Args:
+        completion: Google GenerativeAI response object with usage info
+        model: Model name to look up pricing
+
+    Returns:
+        Cost in USD
+    """
+    if model not in MODEL_PRICING:
+        return 0.0
+
+    pricing = MODEL_PRICING[model]
+    usage = completion.usage_metadata
+
+    # Calculate cost: (tokens * price_per_million) / 1_000_000
+    input_cost = (usage.prompt_token_count * pricing["input"]) / 1_000_000
+    output_cost = (usage.candidates_token_count * pricing["output"]) / 1_000_000
+
+    return input_cost + output_cost
 
 
 class AuditResult:
@@ -45,7 +66,7 @@ def audit_plan(problem: str, plan: Plan) -> Tuple[AuditResult, float]:
     Returns:
         Tuple of (AuditResult with status and critiques, cost in USD)
     """
-    model = "google/gemini-3-pro-preview"
+    model = "gemini-3-pro-preview"
 
     # Format plan as text for audit
     plan_text = _format_plan_for_audit(plan)
@@ -57,22 +78,21 @@ def audit_plan(problem: str, plan: Plan) -> Tuple[AuditResult, float]:
 PROPOSED PLAN:
 {plan_text}"""
 
-    # Call LLM with physics lawyer prompt
-    completion = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": PHYSICS_LAWYER_PROMPT},
-            {"role": "user", "content": audit_message}
-        ],
-        temperature=0.1,
-        response_format={"type": "json_object"}
+    # Create the model instance
+    client = genai.GenerativeModel(
+        model_name=model,
+        system_instruction=PHYSICS_LAWYER_PROMPT,
+        generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
     )
 
+    # Call LLM with physics lawyer prompt
+    completion = client.generate_content(audit_message)
+
     # Calculate cost
-    cost = calculate_cost(completion, model)
+    cost = _calculate_lawyer_cost(completion, model)
 
     # Parse response
-    raw_response = completion.choices[0].message.content
+    raw_response = completion.text
     audit_data = json.loads(raw_response)
 
     return AuditResult(audit_data), cost

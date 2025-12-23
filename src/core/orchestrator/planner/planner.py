@@ -3,7 +3,7 @@ import json
 import sys
 from typing import Tuple
 from dotenv import load_dotenv
-from openai import OpenAI
+import google.generativeai as genai
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(__file__))
@@ -15,10 +15,7 @@ from config.pricing import MODEL_PRICING
 
 load_dotenv()
 
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPEN_ROUTER_KEY")
-)
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 # PLANNER_PROMPT imported from prompts/planning.py
 # MODEL_PRICING imported from config/pricing.py
@@ -29,7 +26,7 @@ def _calculate_plan_cost(completion, model: str) -> float:
     Calculate the cost of a planning completion based on input/output tokens.
 
     Args:
-        completion: OpenAI completion object with usage info
+        completion: Google GenerativeAI response object with usage info
         model: Model name to look up pricing
 
     Returns:
@@ -39,11 +36,11 @@ def _calculate_plan_cost(completion, model: str) -> float:
         return 0.0
 
     pricing = MODEL_PRICING[model]
-    usage = completion.usage
+    usage = completion.usage_metadata
 
     # Calculate cost: (tokens * price_per_million) / 1_000_000
-    input_cost = (usage.prompt_tokens * pricing["input"]) / 1_000_000
-    output_cost = (usage.completion_tokens * pricing["output"]) / 1_000_000
+    input_cost = (usage.prompt_token_count * pricing["input"]) / 1_000_000
+    output_cost = (usage.candidates_token_count * pricing["output"]) / 1_000_000
 
     return input_cost + output_cost
 
@@ -62,24 +59,23 @@ def plan(problem: str) -> Tuple[StateObject, Plan, float]:
         - cost: Cost in USD for this planning step
     """
 
-    model = "google/gemini-3-pro-preview"
+    model = "gemini-3-pro-preview"
+
+    # Create the model instance
+    client = genai.GenerativeModel(
+        model_name=model,
+        system_instruction=PLANNER_PROMPT,
+        generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
+    )
 
     # Call LLM
-    completion = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": PLANNER_PROMPT},
-            {"role": "user", "content": problem}
-        ],
-        temperature=0.1,
-        response_format={"type": "json_object"}
-    )
+    completion = client.generate_content(problem)
 
     # Calculate cost
     cost = _calculate_plan_cost(completion, model)
 
     # Parse JSON
-    raw_response = completion.choices[0].message.content
+    raw_response = completion.text
     data = json.loads(raw_response)
 
     # Validate with Pydantic (this will raise errors if schema is wrong)
