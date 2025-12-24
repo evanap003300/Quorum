@@ -713,3 +713,645 @@ def analyze_problem_image(image_path: str) -> Tuple[str, str, float]:
         raise ValueError(f"Image validation or parsing error: {e}")
     except Exception as e:
         raise Exception(f"Vision API call failed: {e}")
+
+
+def analyze_observation(
+    image_path: str,
+    question: str,
+    model: str = "gemini-3-flash-preview",
+    max_iterations: int = 5
+) -> Tuple[Union[str, float], str, float]:
+    """
+    Query Gemini Flash vision model for a specific observation about the image.
+    Used by OBSERVE operation during solver execution.
+
+    The vision model can use CV tools (crop, enhance, detect regions, etc.)
+    to improve its view before answering the observation question.
+
+    Args:
+        image_path: Path to the image file
+        question: The specific question to ask (from build_observe_prompt)
+        model: Vision model to use (default: Gemini Flash for speed)
+        max_iterations: Max tool calls before forcing answer (default: 5)
+
+    Returns:
+        Tuple of (value, unit, cost)
+        - value: Qualitative observation (e.g., "positive", "diverging")
+        - unit: Unit from response (usually "dimensionless")
+        - cost: API cost for this call
+    """
+    try:
+        print(f"DEBUG: analyze_observation starting with question length={len(question)}")
+        import google.generativeai as genai
+
+        # Load and validate image
+        if not os.path.exists(image_path):
+            raise ValueError(f"Image not found: {image_path}")
+
+        current_image = Image.open(image_path)
+        total_cost = 0.0
+
+        # Define CV tools for observation via function declarations
+        from tools.vision import (
+            get_image_metadata,
+            detect_content_regions,
+            apply_grid,
+            crop_grid_square,
+            crop_quadrant,
+            binarize_image,
+            enhance_clarity
+        )
+
+        # Create function declarations for Gemini
+        from google.generativeai.types import FunctionDeclaration, Tool
+
+        cv_tool_functions = [
+            FunctionDeclaration(
+                name="get_image_metadata",
+                description="Get image dimensions and quality assessment",
+                parameters={"type": "object", "properties": {}, "required": []}
+            ),
+            FunctionDeclaration(
+                name="detect_content_regions",
+                description="Detect text and diagram regions in the image",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "min_area": {"type": "integer", "description": "Minimum region area"}
+                    }
+                }
+            ),
+            FunctionDeclaration(
+                name="apply_grid",
+                description="Overlay grid with alphanumeric labels (A0-J9)",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "grid_size": {"type": "integer", "description": "Grid size (default 10)"},
+                        "line_color": {"type": "string", "enum": ["red", "blue", "green"]}
+                    }
+                }
+            ),
+            FunctionDeclaration(
+                name="crop_grid_square",
+                description="Crop to specific grid cell (e.g., 'D5')",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "cell_ref": {"type": "string", "description": "Grid cell reference"},
+                        "margin": {"type": "integer", "description": "Margin around cell"}
+                    },
+                    "required": ["cell_ref"]
+                }
+            ),
+            FunctionDeclaration(
+                name="crop_quadrant",
+                description="Crop to 25% section of image",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "quadrant": {"type": "string", "enum": ["top_left", "top_right", "bottom_left", "bottom_right", "center"]}
+                    },
+                    "required": ["quadrant"]
+                }
+            ),
+            FunctionDeclaration(
+                name="binarize_image",
+                description="Convert to black and white to improve clarity",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "block_size": {"type": "integer", "description": "Adaptive threshold block size"}
+                    }
+                }
+            ),
+            FunctionDeclaration(
+                name="enhance_clarity",
+                description="Boost contrast and sharpen image",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "contrast": {"type": "boolean"},
+                        "contrast_factor": {"type": "number"},
+                        "sharpen": {"type": "boolean"},
+                        "sharpen_factor": {"type": "number"}
+                    }
+                }
+            )
+        ]
+
+        # Create Tool object for Gemini
+        cv_tools = Tool(function_declarations=cv_tool_functions)
+
+        # Tool execution map
+        tool_map = {
+            "get_image_metadata": lambda args: get_image_metadata(current_image),
+            "detect_content_regions": lambda args: detect_content_regions(current_image, **args),
+            "apply_grid": lambda args: apply_grid(current_image, **args),
+            "crop_grid_square": lambda args: crop_grid_square(current_image, **args),
+            "crop_quadrant": lambda args: crop_quadrant(current_image, **args),
+            "binarize_image": lambda args: binarize_image(current_image, **args),
+            "enhance_clarity": lambda args: enhance_clarity(current_image, **args)
+        }
+
+        # Initialize Gemini with tools and JSON output
+        load_dotenv()
+        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+        vision_model = genai.GenerativeModel(
+            model_name=model,
+            generation_config={
+                "temperature": 0.1,
+                "max_output_tokens": 500,
+                "response_mime_type": "application/json"
+            },
+            tools=[cv_tools]  # ENABLE TOOL CALLING
+        )
+
+        # Create system prompt
+        system_prompt = f"""You are analyzing a physics diagram to extract specific visual properties.
+
+You have access to CV tools to improve your view:
+- apply_grid + crop_grid_square: Zoom into specific regions
+- crop_quadrant: Quick crop to 25% sections
+- enhance_clarity: Improve faint or blurry features
+- binarize_image: Remove shadows, improve text
+
+WORKFLOW:
+1. If the feature you need to observe is small or unclear, use CV tools to get a better view
+2. Once you have a clear view, answer the observation question
+3. Respond in JSON format with qualitative description
+
+RESPOND WITH THIS JSON STRUCTURE:
+{{
+  "value": "<qualitative observation (e.g., 'diverging', 'increasing', 'positive')>",
+  "description": "<detailed explanation of what you observed>",
+  "unit": "dimensionless"
+}}
+
+{question}
+
+IMPORTANT: Respond with valid JSON only. No other text.
+"""
+
+        # Start chat session
+        chat = vision_model.start_chat()
+        response = chat.send_message([system_prompt, current_image])
+
+        # Calculate initial cost
+        pricing = MODEL_PRICING.get(model, {"input": 0, "output": 0})
+        usage = response.usage_metadata
+        total_cost += (usage.prompt_token_count * pricing["input"] +
+                       usage.candidates_token_count * pricing["output"]) / 1_000_000
+
+        # Tool calling loop
+        for iteration in range(max_iterations):
+            # Check if model wants to use tools
+            if (response.candidates and
+                response.candidates[0].content.parts and
+                hasattr(response.candidates[0].content.parts[0], 'function_call')):
+
+                function_call = response.candidates[0].content.parts[0].function_call
+                tool_name = function_call.name
+                args = dict(function_call.args)
+
+                # Execute CV tool
+                if tool_name in tool_map:
+                    try:
+                        result = tool_map[tool_name](args)
+
+                        # Handle different return types
+                        if isinstance(result, tuple) and isinstance(result[0], Image.Image):
+                            current_image = result[0]
+                            metadata = result[1]
+                            tool_response = {"status": "success", "metadata": metadata}
+                        elif isinstance(result, Image.Image):
+                            current_image = result
+                            tool_response = {"status": "success", "message": "Image updated"}
+                        else:
+                            tool_response = result
+
+                        # Send tool result + updated image back to model
+                        response = chat.send_message([
+                            genai.protos.Part(function_response=genai.protos.FunctionResponse(
+                                name=tool_name,
+                                response=tool_response
+                            )),
+                            current_image
+                        ])
+
+                        # Track cost
+                        usage = response.usage_metadata
+                        total_cost += (usage.prompt_token_count * pricing["input"] +
+                                       usage.candidates_token_count * pricing["output"]) / 1_000_000
+
+                    except Exception as e:
+                        # Tool execution failed, send error
+                        response = chat.send_message(
+                            genai.protos.Part(function_response=genai.protos.FunctionResponse(
+                                name=tool_name,
+                                response={"status": "error", "message": str(e)}
+                            ))
+                        )
+                        usage = response.usage_metadata
+                        total_cost += (usage.prompt_token_count * pricing["input"] +
+                                       usage.candidates_token_count * pricing["output"]) / 1_000_000
+            else:
+                # Model provided JSON response - parse it
+                try:
+                    if response.text:
+                        try:
+                            response_json = json.loads(response.text)
+                            value_with_unit = response_json.get("value", "")
+
+                            # Split value and unit (last space separates them)
+                            if " " in value_with_unit:
+                                parts = value_with_unit.rsplit(" ", 1)
+                                value = parts[0]
+                                unit = parts[1]
+                            else:
+                                value = value_with_unit
+                                unit = "dimensionless"
+
+                            return value, unit, total_cost
+                        except json.JSONDecodeError as parse_err:
+                            # JSON parse failed, fallback to raw text
+                            print(f"⚠ Failed to parse OBSERVE response as JSON: {parse_err}")
+                            print(f"  Raw response: {response.text[:200]}")
+                            output_text = response.text.strip()
+                            return output_text, "dimensionless", total_cost
+                    else:
+                        print(f"⚠ Empty OBSERVE response text")
+                        return "", "dimensionless", total_cost
+                except Exception as e:
+                    print(f"⚠ Error in OBSERVE response handling: {e}")
+                    return "", "dimensionless", total_cost
+
+        # Max iterations reached - return best effort response
+        try:
+            if response and response.text:
+                try:
+                    response_json = json.loads(response.text)
+                    value_with_unit = response_json.get("value", "")
+
+                    # Split value and unit (last space separates them)
+                    if " " in value_with_unit:
+                        parts = value_with_unit.rsplit(" ", 1)
+                        value = parts[0]
+                        unit = parts[1]
+                    else:
+                        value = value_with_unit
+                        unit = "dimensionless"
+
+                    return value, unit, total_cost
+                except json.JSONDecodeError as parse_err:
+                    # Fallback to raw text
+                    print(f"⚠ Max iterations reached - failed to parse JSON: {parse_err}")
+                    output_text = response.text.strip()
+                    return output_text, "dimensionless", total_cost
+            else:
+                print(f"⚠ No response or empty text at max iterations")
+                return "", "dimensionless", total_cost
+        except Exception as e:
+            print(f"⚠ Error processing max-iterations response: {e}")
+            return "", "dimensionless", total_cost
+
+    except Exception as e:
+        import traceback
+        print(f"⚠ FATAL error in analyze_observation: {e}")
+        traceback.print_exc()
+        raise Exception(f"analyze_observation failed: {str(e)}")
+
+
+def analyze_observation_multi(
+    image_path: str,
+    question: str,
+    var_names: List[str],
+    step: Any = None,
+    state: Any = None,
+    model: str = "gemini-3-flash-preview",
+    max_iterations: int = 5
+) -> Tuple[Dict[str, Union[str, float]], Dict[str, str], float]:
+    """
+    Query Gemini Flash vision model for multiple observations about the image.
+    The vision model can use CV tools to improve its view.
+
+    Args:
+        image_path: Path to the image file
+        question: The question with multiple variable requests
+        var_names: List of variable names to extract
+        step: The current step (optional, for context)
+        state: Current state (optional, for context)
+        model: Vision model to use
+        max_iterations: Max tool calls before forcing answer
+
+    Returns:
+        Tuple of (values_dict, units_dict, cost)
+    """
+    try:
+        print(f"DEBUG: analyze_observation_multi called with var_names={var_names}")
+        import google.generativeai as genai
+
+        # Load image
+        if not os.path.exists(image_path):
+            raise ValueError(f"Image not found: {image_path}")
+
+        print(f"DEBUG: Image loaded from {image_path}")
+        current_image = Image.open(image_path)
+        total_cost = 0.0
+
+        # Define CV tools
+        from tools.vision import (
+            get_image_metadata,
+            detect_content_regions,
+            apply_grid,
+            crop_grid_square,
+            crop_quadrant,
+            binarize_image,
+            enhance_clarity
+        )
+
+        # Create function declarations
+        from google.generativeai.types import FunctionDeclaration, Tool
+
+        cv_tool_functions = [
+            FunctionDeclaration(
+                name="get_image_metadata",
+                description="Get image dimensions and quality assessment",
+                parameters={"type": "object", "properties": {}}
+            ),
+            FunctionDeclaration(
+                name="detect_content_regions",
+                description="Detect text and diagram regions",
+                parameters={
+                    "type": "object",
+                    "properties": {"min_area": {"type": "integer"}}
+                }
+            ),
+            FunctionDeclaration(
+                name="apply_grid",
+                description="Overlay grid (A0-J9)",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "grid_size": {"type": "integer"},
+                        "line_color": {"type": "string", "enum": ["red", "blue", "green"]}
+                    }
+                }
+            ),
+            FunctionDeclaration(
+                name="crop_grid_square",
+                description="Crop to grid cell",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "cell_ref": {"type": "string"},
+                        "margin": {"type": "integer"}
+                    },
+                    "required": ["cell_ref"]
+                }
+            ),
+            FunctionDeclaration(
+                name="crop_quadrant",
+                description="Crop to 25% section",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "quadrant": {"type": "string", "enum": ["top_left", "top_right", "bottom_left", "bottom_right", "center"]}
+                    },
+                    "required": ["quadrant"]
+                }
+            ),
+            FunctionDeclaration(
+                name="binarize_image",
+                description="Convert to B&W",
+                parameters={
+                    "type": "object",
+                    "properties": {"block_size": {"type": "integer"}}
+                }
+            ),
+            FunctionDeclaration(
+                name="enhance_clarity",
+                description="Boost contrast and sharpen",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "contrast": {"type": "boolean"},
+                        "contrast_factor": {"type": "number"},
+                        "sharpen": {"type": "boolean"},
+                        "sharpen_factor": {"type": "number"}
+                    }
+                }
+            )
+        ]
+
+        # Create Tool object for Gemini
+        cv_tools = Tool(function_declarations=cv_tool_functions)
+
+        # Tool map
+        tool_map = {
+            "get_image_metadata": lambda args: get_image_metadata(current_image),
+            "detect_content_regions": lambda args: detect_content_regions(current_image, **args),
+            "apply_grid": lambda args: apply_grid(current_image, **args),
+            "crop_grid_square": lambda args: crop_grid_square(current_image, **args),
+            "crop_quadrant": lambda args: crop_quadrant(current_image, **args),
+            "binarize_image": lambda args: binarize_image(current_image, **args),
+            "enhance_clarity": lambda args: enhance_clarity(current_image, **args)
+        }
+
+        # Initialize Gemini with JSON response format
+        load_dotenv()
+        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+        vision_model = genai.GenerativeModel(
+            model_name=model,
+            generation_config={
+                "temperature": 0.1,
+                "max_output_tokens": 1000,
+                "response_mime_type": "application/json"
+            },
+            tools=[cv_tools]  # ENABLE TOOL CALLING
+        )
+
+        # Create prompt
+        system_prompt = f"""You are analyzing a physics diagram to extract specific visual properties.
+
+You have CV tools available to improve your view before answering.
+
+{question}
+
+RESPOND WITH THIS JSON STRUCTURE FOR MULTIPLE VARIABLES:
+{{
+  "var_name_1": {{
+    "value": "<qualitative observation>",
+    "description": "<detailed explanation>",
+    "unit": "dimensionless"
+  }},
+  "var_name_2": {{
+    "value": "<qualitative observation>",
+    "description": "<detailed explanation>",
+    "unit": "dimensionless"
+  }}
+}}
+
+IMPORTANT: Respond with valid JSON only. No other text.
+"""
+
+        # Start chat
+        print(f"DEBUG: Starting chat session for multi-output observation")
+        chat = vision_model.start_chat()
+        print(f"DEBUG: Sending message to vision model")
+        response = chat.send_message([system_prompt, current_image])
+        print(f"DEBUG: Got response, type={type(response)}, response={response}")
+
+        # Track cost
+        pricing = MODEL_PRICING.get(model, {"input": 0, "output": 0})
+        print(f"DEBUG: Getting usage metadata")
+        usage = response.usage_metadata
+        print(f"DEBUG: Got usage, tokens={usage.prompt_token_count}")
+        total_cost += (usage.prompt_token_count * pricing["input"] +
+                       usage.candidates_token_count * pricing["output"]) / 1_000_000
+
+        # Tool calling loop
+        print(f"DEBUG: Starting tool calling loop")
+        for iteration in range(max_iterations):
+            print(f"DEBUG: Tool loop iteration {iteration}")
+            if (response.candidates and
+                response.candidates[0].content.parts and
+                hasattr(response.candidates[0].content.parts[0], 'function_call')):
+
+                function_call = response.candidates[0].content.parts[0].function_call
+                tool_name = function_call.name
+                args = dict(function_call.args)
+
+                if tool_name in tool_map:
+                    try:
+                        result = tool_map[tool_name](args)
+
+                        if isinstance(result, tuple) and isinstance(result[0], Image.Image):
+                            current_image = result[0]
+                            metadata = result[1]
+                            tool_response = {"status": "success", "metadata": metadata}
+                        elif isinstance(result, Image.Image):
+                            current_image = result
+                            tool_response = {"status": "success"}
+                        else:
+                            tool_response = result
+
+                        response = chat.send_message([
+                            genai.protos.Part(function_response=genai.protos.FunctionResponse(
+                                name=tool_name,
+                                response=tool_response
+                            )),
+                            current_image
+                        ])
+
+                        usage = response.usage_metadata
+                        total_cost += (usage.prompt_token_count * pricing["input"] +
+                                       usage.candidates_token_count * pricing["output"]) / 1_000_000
+
+                    except Exception as e:
+                        response = chat.send_message(
+                            genai.protos.Part(function_response=genai.protos.FunctionResponse(
+                                name=tool_name,
+                                response={"status": "error", "message": str(e)}
+                            ))
+                        )
+                        usage = response.usage_metadata
+                        total_cost += (usage.prompt_token_count * pricing["input"] +
+                                       usage.candidates_token_count * pricing["output"]) / 1_000_000
+            else:
+                # Parse multi-output JSON response
+                try:
+                    if response.text:
+                        response_json = json.loads(response.text)
+
+                        # Extract values and units for each variable
+                        values_dict = {}
+                        units_dict = {}
+
+                        for var_name in var_names:
+                            if var_name in response_json:
+                                value_with_unit = response_json[var_name]
+
+                                # Split value and unit (last space separates them)
+                                if isinstance(value_with_unit, str) and " " in value_with_unit:
+                                    parts = value_with_unit.rsplit(" ", 1)
+                                    value = parts[0]
+                                    unit = parts[1]
+                                else:
+                                    value = str(value_with_unit)
+                                    unit = "dimensionless"
+
+                                values_dict[var_name] = value
+                                units_dict[var_name] = unit
+                            else:
+                                values_dict[var_name] = None
+                                units_dict[var_name] = "unknown"
+
+                        return values_dict, units_dict, total_cost
+                    else:
+                        # Empty response
+                        values_dict = {v: None for v in var_names}
+                        units_dict = {v: "unknown" for v in var_names}
+                        return values_dict, units_dict, total_cost
+                except (json.JSONDecodeError, ValueError, KeyError) as parse_error:
+                    # JSON parsing failed - log for debugging
+                    print(f"⚠ JSON parse error in OBSERVE response: {parse_error}")
+                    if response.text:
+                        print(f"  Raw response: {response.text[:200]}")
+                    # Fallback: return None for all variables
+                    values_dict = {v: None for v in var_names}
+                    units_dict = {v: "unknown" for v in var_names}
+                    return values_dict, units_dict, total_cost
+
+        # Max iterations reached - try to parse final response
+        try:
+            if response and response.text:
+                try:
+                    response_json = json.loads(response.text)
+                except json.JSONDecodeError as parse_err:
+                    print(f"⚠ Failed to parse final OBSERVE response as JSON: {parse_err}")
+                    print(f"  Raw response: {response.text[:200]}")
+                    # Return None for all variables
+                    values_dict = {v: None for v in var_names}
+                    units_dict = {v: "unknown" for v in var_names}
+                    return values_dict, units_dict, total_cost
+
+                values_dict = {}
+                units_dict = {}
+
+                for var_name in var_names:
+                    if var_name in response_json:
+                        value_with_unit = response_json[var_name]
+
+                        # Split value and unit (last space separates them)
+                        if isinstance(value_with_unit, str) and " " in value_with_unit:
+                            parts = value_with_unit.rsplit(" ", 1)
+                            value = parts[0]
+                            unit = parts[1]
+                        else:
+                            value = str(value_with_unit)
+                            unit = "dimensionless"
+
+                        values_dict[var_name] = value
+                        units_dict[var_name] = unit
+                    else:
+                        values_dict[var_name] = None
+                        units_dict[var_name] = "unknown"
+
+                return values_dict, units_dict, total_cost
+            else:
+                print(f"⚠ No response or empty response text from OBSERVE")
+                values_dict = {v: None for v in var_names}
+                units_dict = {v: "unknown" for v in var_names}
+                return values_dict, units_dict, total_cost
+        except (ValueError, KeyError) as e:
+            print(f"⚠ Error processing OBSERVE final response: {e}")
+            values_dict = {v: None for v in var_names}
+            units_dict = {v: "unknown" for v in var_names}
+            return values_dict, units_dict, total_cost
+
+    except Exception as e:
+        import traceback
+        print(f"⚠ FATAL error in analyze_observation_multi: {e}")
+        traceback.print_exc()
+        raise Exception(f"analyze_observation_multi failed: {str(e)}")

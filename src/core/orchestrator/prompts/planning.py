@@ -56,6 +56,16 @@ PLANNER_PROMPT = """You are an expert physics and mathematics problem planner. Y
    - "extract" = get values from the problem text (can be multiple variables)
    - "calculate" = perform one mathematical operation
    - "convert" = change units
+   - "observe" = analyze visual properties from the diagram (qualitative assessment)
+
+2b. **OBSERVE OPERATIONS** (for visual analysis from diagrams):
+   - Use "observe" if a step requires analyzing visual properties that aren't explicitly written in text
+   - Examples: "Determine if arrows are diverging", "Check if slope is positive at point P", "Count peaks in the graph"
+   - Do NOT use "extract" for visual features - use "observe" instead
+   - OBSERVE steps should ask specific, answerable questions to the vision model
+   - OBSERVE outputs are qualitative strings (e.g., "positive", "diverging", "increasing", "3")
+   - Batch multiple visual observations into one OBSERVE step when possible
+   - Use "outputs": ["var1", "var2"] and "expected_units": {"var1": "dimensionless", ...} format
 
 3. **Variable naming**: Use clear, standard physics notation
    - Good: v0, v_f, theta, F_net, delta_x
@@ -230,6 +240,51 @@ Response:
     ],
     "final_output": "v_t",
     "approach": "Extract symbolic variables in one step, then use momentum conservation to derive v(t)"
+  }
+}
+
+**Example 4 - Vector Field Divergence (Visual Analysis):**
+Problem: "Determine whether the divergence of the vector field at point P (marked in blue) is positive, negative, or zero. The diagram shows a 2D vector field with arrows of varying lengths."
+
+Response:
+{
+  "state": {
+    "problem_text": "Determine whether the divergence of the vector field at point P is positive, negative, or zero.",
+    "domain": "vector calculus",
+    "variables": {
+      "flow_pattern": {"name": "flow_pattern", "description": "direction of flow relative to point P (diverging, converging, or parallel)", "expected_unit": "dimensionless", "value": null, "unit": null, "source_step": null, "is_symbolic": false},
+      "magnitude_trend": {"name": "magnitude_trend", "description": "trend of arrow magnitudes away from point P (increasing, decreasing, or constant)", "expected_unit": "dimensionless", "value": null, "unit": null, "source_step": null, "is_symbolic": false},
+      "div_sign": {"name": "div_sign", "description": "sign of divergence at point P", "expected_unit": "dimensionless", "value": null, "unit": null, "source_step": null, "is_symbolic": false}
+    },
+    "assumptions": ["point P is in the domain of the field", "arrows represent field vectors"]
+  },
+  "plan": {
+    "steps": [
+      {
+        "step_id": 1,
+        "operation": "observe",
+        "description": "Analyze vector flow pattern around point P",
+        "inputs": [],
+        "outputs": ["flow_pattern", "magnitude_trend"],
+        "formula": null,
+        "expected_units": {"flow_pattern": "dimensionless", "magnitude_trend": "dimensionless"},
+        "justification": "Visual assessment: examine if arrows spread out/come together and if they grow/shrink in magnitude",
+        "is_symbolic": false
+      },
+      {
+        "step_id": 2,
+        "operation": "calculate",
+        "description": "Determine divergence sign from flow characteristics",
+        "inputs": ["flow_pattern", "magnitude_trend"],
+        "output": "div_sign",
+        "formula": "1 if (flow_pattern == 'diverging' or magnitude_trend == 'increasing') else (-1 if (flow_pattern == 'converging' or magnitude_trend == 'decreasing') else 0)",
+        "expected_unit": "dimensionless",
+        "justification": "Divergence positive if net outward flow or increasing magnitude; negative if inward or decreasing",
+        "is_symbolic": false
+      }
+    ],
+    "final_output": "div_sign",
+    "approach": "Use OBSERVE to analyze vector field behavior visually at point P, then map results to divergence sign"
   }
 }
 

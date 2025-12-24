@@ -164,3 +164,92 @@ IMPORTANT: This is a SYMBOLIC conversion.
         return base_prompt + symbolic_section
     else:
         return base_prompt
+
+
+def build_observe_prompt(step: Step, state: StateObject) -> str:
+    """Build prompt for observe operations - reads specific values from diagram"""
+
+    outputs = step.get_outputs()
+
+    # Handle multi-output observation
+    if len(outputs) > 1:
+        variables_section = ""
+        for var_name in outputs:
+            var = state.variables[var_name]
+            unit = step.get_unit(var_name)
+            variables_section += f"  - {var_name}: {var.description} (unit: {unit})\n"
+
+        return f"""READ THESE VALUES FROM THE DIAGRAM:
+
+{variables_section}
+
+TASK:
+{step.description}
+
+INSTRUCTIONS:
+1. Use computer vision tools if needed (crop regions, enhance clarity, apply grid for reference)
+2. Locate each variable in the diagram (table, graph, label, etc.)
+3. Read the exact value and unit
+4. Return the numeric or symbolic value you find
+
+RESPONSE FORMAT (STRICT JSON):
+Return ONLY valid JSON with this exact structure:
+
+{{
+  "var_name_1": "value_with_unit",
+  "var_name_2": "value_with_unit"
+}}
+
+CRITICAL:
+- Return ONLY the JSON object, no other text
+- Include units in the value: "15 m/s", "3.2", "M kg", etc.
+- If symbolic (variable letter), return the letter: "M", "L", "θ"
+- All quotes and JSON must be valid
+
+Example response:
+{{
+  "T_ref": "72 C",
+  "h": "5 m"
+}}
+"""
+
+    # Single variable observation
+    var = state.variables[outputs[0]]
+    unit = step.get_unit(outputs[0])
+
+    return f"""READ THIS VALUE FROM THE DIAGRAM:
+
+{var.description} (unit: {unit})
+
+TASK:
+{step.description}
+
+INSTRUCTIONS:
+1. Use computer vision tools if needed (crop regions, enhance clarity, apply grid for reference)
+2. Locate the value in the diagram (table, graph, label, measurement, etc.)
+3. Read the exact value and unit
+4. Return what you find
+
+RESPONSE FORMAT (STRICT JSON):
+Return ONLY valid JSON with this exact structure:
+
+{{
+  "value": "measurement_with_unit"
+}}
+
+CRITICAL:
+- Return ONLY the JSON object, no other text
+- Include units: "15 m/s", "72 C", "3.2 kg", "M", "θ", etc.
+- If it's a symbolic variable (single letter), just return the letter
+- If it's a number, include the unit
+- All quotes and JSON must be valid
+
+Example responses:
+{{
+  "value": "15 m/s"
+}}
+
+{{
+  "value": "M"
+}}
+"""

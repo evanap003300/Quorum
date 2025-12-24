@@ -102,6 +102,10 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
     plan_start_time = time.time()
     try:
         state, plan_obj, plan_cost = plan(problem)
+
+        # Add image_path to state context for OBSERVE operations
+        if image_path:
+            state.problem_context = {"image_path": image_path}
     except Exception as e:
         return {
             "success": False,
@@ -421,21 +425,18 @@ def test_orchestrator():
 
     # Get absolute path to test image
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    test_image_path = os.path.join(current_dir, 'test_image.png')
+    vector_field_path = os.path.join(current_dir, 'vector_field_image.png')
 
     problems = [
-        """The temperature of a metal plate at point (x, y) is given by T(x, y) as shown in this
-table.The units for x and y are meters and the units for temperature are degrees
-Celsius. The x-values are on the left and the y-values are along the top. Find a linear approximation to the temperature function T(x, y) and use it to
-estimate the temperature at the point (5, 3.8)."""
+        """Determine whether the divergence of each vector field (in green) at the indicated point $P$ (in blue) is positive, negative, or zero."""
     ]
-    
+
     for i, problem in enumerate(problems, 1):
         print("\n" + "="*70)
         print(f"PROBLEM {i}")
         print("="*70)
-        
-        result = solve_problem(problem, image_path="table.png")
+
+        result = solve_problem(problem, image_path=vector_field_path)
         
         if result["success"]:
             print(f"\n✓ SUCCESS: {result['final_answer']} {result['final_unit']}")

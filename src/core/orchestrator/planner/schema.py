@@ -17,11 +17,13 @@ class StateObject(BaseModel):
     domain: str
     variables: Dict[str, Variable]
     assumptions: List[str] = Field(default_factory=list)
+    problem_context: Optional[dict] = None  # Store image_path and other runtime context
 
 class OperationType(str, Enum):
     EXTRACT = "extract"
     CALCULATE = "calculate"
     CONVERT = "convert"
+    OBSERVE = "observe"  # Query vision model for visual properties
 
 class Step(BaseModel):
     step_id: int
