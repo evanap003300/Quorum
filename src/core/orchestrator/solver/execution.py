@@ -33,14 +33,8 @@ try:
 except ImportError:
     Sandbox = None
 
-# Import python interpreter
-spec = importlib.util.spec_from_file_location(
-    "python_interpreter_e2b",
-    os.path.join(os.path.dirname(__file__), "python_interpreter-e2b", "main.py")
-)
-python_interpreter_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(python_interpreter_module)
-_run_python_impl = python_interpreter_module.run
+# Import python interpreter from tools
+from tools.evaluation.code_interpreter import run as _run_python_impl
 
 load_dotenv()
 

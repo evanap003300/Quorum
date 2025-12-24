@@ -15,23 +15,13 @@ from planner.schema import StateObject, Plan
 from planner.critics.physics_lawyer import audit_plan
 from planner.revisor import revise_plan
 from vision import analyze_problem_image
+from tools.evaluation.code_interpreter import init_sandbox
 
-# Import Sandbox and init_sandbox using importlib (handles filename with dash)
+# Import Sandbox from e2b
 Sandbox = None
-init_sandbox = None
 
 try:
     from e2b_code_interpreter import Sandbox
-
-    # Use importlib to handle python_interpreter-e2b (has dash, can't be imported normally)
-    spec = importlib.util.spec_from_file_location(
-        "python_interpreter_e2b",
-        os.path.join(os.path.dirname(__file__), "solver", "python_interpreter-e2b", "main.py")
-    )
-    if spec and spec.loader:
-        python_interpreter_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(python_interpreter_module)
-        init_sandbox = getattr(python_interpreter_module, 'init_sandbox', None)
 except Exception:
     # Silently fall back - system will work with per-step sandboxes
     pass
