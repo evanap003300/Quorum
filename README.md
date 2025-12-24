@@ -15,7 +15,26 @@ The system uses structured JSON state objects to track assumptions, known values
 
 ## How It Works
 
-### Step 0: Physics Review
+### Step 0: Image Analysis (Optional)
+If an image is provided, the **Vision Module** extracts the problem using LLM-powered CV tool calling:
+
+- Uses GPT-4o with 8 specialized computer vision tools
+- LLM iteratively preprocesses images: applies grid, crops regions, enhances clarity
+- Solves spatial hallucination with 10×10 grid system (A0-J9 labels)
+- Saves intermediate images for debugging
+- Returns extracted problem text + diagram context
+
+**Available CV Tools:**
+- `get_image_metadata` - Check resolution and viability
+- `detect_content_regions` - Find text blocks and diagrams
+- `detect_shadows_and_artifacts` - Diagnose quality issues
+- `apply_grid` - Overlay navigation grid with labels
+- `crop_grid_square` - Zoom to grid cell (e.g., "D5")
+- `crop_quadrant` - Quick 25% cropping
+- `binarize_image` - Remove shadows, B&W conversion
+- `enhance_clarity` - Boost contrast and sharpen
+
+### Step 1: Physics Review
 Once a plan is created, the **Physics Lawyer** audits it for conceptual errors:
 
 - Checks for reference frame violations (e.g., absolute vs relative velocity)
@@ -26,7 +45,7 @@ Once a plan is created, the **Physics Lawyer** audits it for conceptual errors:
 
 If errors are found, the **Revisor** automatically repairs the plan while preserving dependencies. This prevents wasted computation on fundamentally flawed approaches.
 
-### Step 1: Planning
+### Step 2: Planning
 When you provide a problem, the **Planner** breaks it down into atomic steps:
 
 - Uses Google Gemini 3 Pro to understand the problem structure
@@ -45,7 +64,7 @@ Step 3: Extract t = 5 seconds
 Step 4: Calculate v = v0 + a*t = 0 + 2*5 = 10 m/s
 ```
 
-### Step 2: Execution
+### Step 3: Execution
 For each step, the **Solver** generates and executes Python code:
 
 - Generates executable Python code based on the step requirements
@@ -54,7 +73,7 @@ For each step, the **Solver** generates and executes Python code:
 - Supports up to 3 retry attempts if code generation fails
 - Extracts the result in the format: `<value> <unit>`
 
-### Step 3: State Tracking
+### Step 4: State Tracking
 The **Orchestrator** maintains a complete state object throughout execution:
 
 - Tracks all variables: given values, calculated intermediates, final answers
@@ -62,7 +81,7 @@ The **Orchestrator** maintains a complete state object throughout execution:
 - Maintains unit information for each variable
 - Enables verification of calculation chains
 
-### Step 4: Final Answer
+### Step 5: Final Answer
 Once all steps complete, the system returns:
 
 - The final calculated value with units
@@ -108,13 +127,41 @@ Once all steps complete, the system returns:
 
 ## Core Components
 
+### 0. Vision Module (`src/core/orchestrator/vision.py`)
+**Extracts problems from images using LLM-powered CV tool calling**
+
+Main function: `analyze_problem_image_with_cv_tools(image_path: str)`
+- Calls GPT-4o with 8 computer vision tools
+- LLM iteratively preprocesses images before extraction
+- Saves intermediate images for debugging
+- Returns: (problem_text, diagram_context, cost, intermediate_paths)
+
+**Key features:**
+- Tool calling loop: LLM decides which CV tools to apply
+- Resolution cliff solution: 10×10 grid with alphanumeric labels (A0-J9)
+- Spatial hallucination fix: LLM chains `apply_grid()` → `crop_grid_square()`
+- Cost tracking: Accumulates vision image costs per iteration
+- Intermediate image saving: Preserves all preprocessing steps
+
+**Tools available:**
+1. `get_image_metadata` - Resolution assessment
+2. `detect_content_regions` - Find text/diagram blocks
+3. `detect_shadows_and_artifacts` - Diagnose issues
+4. `apply_grid` - Add navigation reference
+5. `crop_grid_square` - Zoom to cell
+6. `crop_quadrant` - Quick cropping
+7. `binarize_image` - B&W conversion
+8. `enhance_clarity` - Contrast + sharpen
+
 ### 1. Orchestrator (`src/core/orchestrator/orchestrate.py`)
 **Coordinates the entire problem-solving pipeline**
 
-Main function: `solve_problem(problem: str)`
-- Calls planner to create a plan
+Main function: `solve_problem(problem: str, image_path: Optional[str])`
+- Calls vision module if image provided (Step 0)
+- Calls planner to create a plan (Step 2)
+- Calls physics lawyer + revisor for validation (Step 1)
 - Iterates through each step
-- Calls solver for each step
+- Calls solver for each step (Step 3)
 - Updates state with results
 - Returns final answer or error
 
@@ -122,13 +169,13 @@ Main function: `solve_problem(problem: str)`
 **Decomposes problems into atomic steps**
 
 Main function: `plan(problem: str) -> Tuple[StateObject, Plan]`
-- Uses Google Gemini 3 Pro (via OpenRouter)
+- Uses Google Gemini 3 Pro (via Google Generative AI)
 - Extracts key values from the problem
 - Creates step-by-step solution approach
 - Returns structured plan and initial state
 - Prompt template: `prompts/planning.py:PLANNER_PROMPT`
 
-### 2a. Physics Lawyer (`src/core/orchestrator/planner/critics/physics_lawyer.py`)
+### 3. Physics Lawyer (`src/core/orchestrator/planner/critics/physics_lawyer.py`)
 **Audits plans for conceptual physics errors**
 
 Main function: `audit_plan(problem: str, plan: Plan) -> AuditResult`
@@ -144,7 +191,7 @@ Main function: `audit_plan(problem: str, plan: Plan) -> AuditResult`
 - Returns JSON-structured audit results
 - Prompt template: `prompts/critics.py:PHYSICS_LAWYER_PROMPT`
 
-### 2b. Revisor (`src/core/orchestrator/planner/revisor.py`)
+### 4. Revisor (`src/core/orchestrator/planner/revisor.py`)
 **Repairs flagged plans while preserving dependencies**
 
 Main function: `revise_plan(problem: str, plan: Plan, critiques: List) -> Plan`
@@ -155,15 +202,16 @@ Main function: `revise_plan(problem: str, plan: Plan, critiques: List) -> Plan`
 - Returns corrected plan in same JSON schema
 - Prompt template: `prompts/revisor.py:REVISOR_PROMPT`
 
-### 3. Solver (`src/core/orchestrator/solver/solver.py`)
+### 5. Solver (`src/core/orchestrator/solver/solver.py`)
 **Executes individual atomic steps** (slim entry point, ~65 lines)
 
-Main function: `solve_step(step: Step, state: StateObject) -> Tuple[bool, Optional[float], Optional[str], Optional[str]]`
+Main function: `solve_step(step: Step, state: StateObject, sandbox: Optional[Sandbox])`
 - Routes step execution based on operation type
 - Delegates to execution and parsing modules
+- Passes hot sandbox for reuse across steps
 - Returns success status and result
 
-#### 3a. Solver Execution (`src/core/orchestrator/solver/execution.py`)
+#### 5a. Solver Execution (`src/core/orchestrator/solver/execution.py`)
 **LLM-powered code generation and execution** (~250 lines)
 
 Functions:
@@ -172,7 +220,7 @@ Functions:
 - Uses gpt-4.1-mini-2025-04-14 for code generation
 - Supports up to 3 retry attempts if generation fails
 
-#### 3b. Solver Parsing (`src/core/orchestrator/solver/parsing.py`)
+#### 5b. Solver Parsing (`src/core/orchestrator/solver/parsing.py`)
 **Output processing and validation** (~200 lines)
 
 Functions:
@@ -182,7 +230,7 @@ Functions:
 - `validate_result()` - Validates results meet semantic requirements
 - `calculate_cost()` - Computes API token costs
 
-#### 3c. Solver Prompts (`src/core/orchestrator/prompts/solver.py`)
+#### 5c. Solver Prompts (`src/core/orchestrator/prompts/solver.py`)
 **Prompt templates and builders** (~120 lines)
 
 Constants:
@@ -194,7 +242,7 @@ Functions:
 - `build_calculate_prompt()` - Generates calculation prompts
 - `build_convert_prompt()` - Generates unit conversion prompts
 
-### 4. Data Models (`src/core/orchestrator/planner/schema.py`)
+### 6. Data Models (`src/core/orchestrator/planner/schema.py`)
 **Defines the structure for plans and state**
 
 Key classes:
@@ -203,32 +251,65 @@ Key classes:
 - `Step` - Atomic operation with inputs, formula, and expected output
 - `Plan` - Complete solution strategy with all steps
 
-### 5. Configuration (`src/core/orchestrator/config/pricing.py`)
+### 7. Tools (`src/core/orchestrator/tools/`)
+**Specialized tool suites for image preprocessing and code execution**
+
+#### 7a. Computer Vision Tools (`src/core/orchestrator/tools/vision/`)
+**18 specialized CV tools organized into 4 suites:**
+
+**Spatial Suite** (navigation & focus):
+- `crop_quadrant()` - Quick 25% cropping
+- `crop_region()` - Precise pixel cropping
+- `apply_grid()` - 10×10 navigation grid
+- `crop_grid_square()` - Zoom to grid cell
+
+**Clarity Suite** (enhancement & restoration):
+- `binarize_image()` - Adaptive B&W conversion (removes shadows)
+- `invert_colors()` - Fix blackboard/dark-mode images
+- `enhance_clarity()` - Boost contrast + sharpen
+- `stretch_contrast()` - Full dynamic range
+- `denoise_image()` - Noise reduction
+- `apply_unsharp_mask()` - Targeted sharpening
+
+**Debugging Suite** (metadata & analysis):
+- `get_image_metadata()` - Resolution assessment
+- `analyze_image_contrast()` - Brightness/contrast metrics
+- `detect_shadows_and_artifacts()` - Problem diagnosis
+- `compare_images()` - A/B testing preprocessing
+
+**Content Detection Suite** (automatic region finding):
+- `detect_content_regions()` - Find text/diagram blocks
+- `detect_text_regions()` - Locate text areas
+- `detect_diagram_regions()` - Find visual content
+- `highlight_content_regions()` - Visualization overlay
+
+#### 7b. Code Interpreter (`src/core/orchestrator/tools/evaluation/code_interpreter.py`)
+**Sandboxed Python execution using E2B**
+
+Features:
+- Hot sandbox reuse for 60-90% performance improvement
+- Automatic library installation (numpy, sympy, pint)
+- Safe, isolated execution environment
+- Cost-effective per-step execution
+
+### 8. Configuration (`src/core/orchestrator/config/pricing.py`)
 **Centralized model pricing configuration**
 
 - Single source of truth for model costs
 - Consolidates pricing from all modules
 - Supports both direct OpenAI and OpenRouter models
 
-### 6. Prompts (`src/core/orchestrator/prompts/`)
-**Centralized prompt templates** (~500 lines total)
+### 9. Prompts (`src/core/orchestrator/prompts/`)
+**Centralized prompt templates** (~700 lines total)
 
 Modules:
-- `prompts/vision.py` - Image analysis prompt (VISION_PROMPT)
+- `prompts/vision.py` - Vision analysis prompts (VISION_PROMPT, ENHANCED_VISION_PROMPT)
 - `prompts/planning.py` - Problem planning prompt (PLANNER_PROMPT)
 - `prompts/solver.py` - Solver prompts and builders
 - `prompts/critics.py` - Physics Lawyer audit prompt (PHYSICS_LAWYER_PROMPT)
 - `prompts/revisor.py` - Plan revisor prompt (REVISOR_PROMPT)
 
-### 7. Python Interpreter (`src/core/orchestrator/solver/python_interpreter-e2b/main.py`)
-**Provides sandboxed code execution**
-
-- Uses E2B Code Interpreter for safe, isolated Python execution
-- Automatically installs required libraries
-- Captures and returns code output
-- Supports hot sandbox reuse for faster execution
-
-### 8. Format Validation (`src/core/orchestrator/degradation/format.py`)
+### 10. Format Validation (`src/core/orchestrator/degradation/format.py`)
 **Detects degradation and hallucinations** (future enhancement)
 
 ## Setup & Configuration
@@ -258,17 +339,26 @@ black>=23.12.0            # Code formatting
 Create a `.env` file in the project root:
 
 ```
-OPENAI_API_KEY=<your_openai_api_key>        # Optional, for direct OpenAI API access (faster)
-OPEN_ROUTER_KEY=<your_openrouter_api_key>   # Required, for OpenRouter models (fallback/planner)
-E2B_API_KEY=<your_e2b_api_key>              # Required, for E2B sandboxed code execution
+OPENAI_API_KEY=<your_openai_api_key>           # Required, for GPT-4o vision and code generation
+GOOGLE_API_KEY=<your_google_api_key>           # Required, for Google Gemini 3 Pro (planning/review)
+E2B_API_KEY=<your_e2b_api_key>                 # Required, for E2B sandboxed code execution
 ```
 
 **Required Keys:**
-- **OPEN_ROUTER_KEY**: API key for OpenRouter (provides access to Google Gemini 3 Pro for planning)
+- **OPENAI_API_KEY**: API key for OpenAI (GPT-4o for vision + code generation, gpt-4.1-mini for solver)
+- **GOOGLE_API_KEY**: API key for Google Generative AI (Gemini 3 Pro for planning, Gemini 3 Flash for revisor)
 - **E2B_API_KEY**: API key for E2B sandboxed code execution
 
-**Optional Keys:**
-- **OPENAI_API_KEY**: Direct access to OpenAI API (for faster solving). If not provided, falls back to OpenRouter
+**Environment Setup:**
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Create .env file with your API keys
+echo "OPENAI_API_KEY=sk-..." >> .env
+echo "GOOGLE_API_KEY=AIza..." >> .env
+echo "E2B_API_KEY=..." >> .env
+```
 
 ### Installation
 
@@ -347,42 +437,57 @@ accurate_problem_solver/
 │       └── orchestrator/
 │           ├── orchestrate.py           # Main orchestrator
 │           │
-│           ├── config/                  # Configuration (NEW)
+│           ├── config/                  # Configuration
 │           │   ├── __init__.py
 │           │   └── pricing.py           # Unified model pricing
 │           │
-│           ├── prompts/                 # Centralized prompts (NEW)
+│           ├── prompts/                 # Centralized prompts
 │           │   ├── __init__.py
-│           │   ├── vision.py            # Vision analysis prompt
+│           │   ├── vision.py            # Vision analysis prompts
 │           │   ├── planning.py          # Planning prompt
-│           │   └── solver.py            # Solver prompts & builders
+│           │   ├── solver.py            # Solver prompts & builders
+│           │   ├── critics.py           # Physics Lawyer prompt
+│           │   └── revisor.py           # Revisor prompt
 │           │
 │           ├── planner/
 │           │   ├── planner.py           # Problem planner
 │           │   ├── schema.py            # Data models
-│           │   ├── critics/             # Plan critics (NEW)
+│           │   ├── critics/
 │           │   │   ├── __init__.py
 │           │   │   └── physics_lawyer.py # Physics auditor
-│           │   └── revisor.py           # Plan repair (NEW)
+│           │   └── revisor.py           # Plan repair
 │           │
 │           ├── solver/
-│           │   ├── solver.py            # Main entry point (~65 lines)
-│           │   ├── execution.py         # LLM executors (NEW)
-│           │   ├── parsing.py           # Output parsing (NEW)
-│           │   └── python_interpreter-e2b/
-│           │       └── main.py          # E2B integration
+│           │   ├── solver.py            # Main entry point
+│           │   ├── execution.py         # LLM executors
+│           │   └── parsing.py           # Output parsing
+│           │
+│           ├── tools/
+│           │   ├── vision/              # Computer Vision tools
+│           │   │   ├── __init__.py
+│           │   │   ├── utils.py         # Helper functions
+│           │   │   ├── spatial.py       # Cropping & grid tools
+│           │   │   ├── clarity.py       # Enhancement tools
+│           │   │   ├── debugging.py     # Analysis & diagnostics
+│           │   │   ├── content_detection.py # Auto region finding
+│           │   │   └── README.md        # CV tools documentation
+│           │   └── evaluation/
+│           │       ├── __init__.py
+│           │       └── code_interpreter.py # E2B sandbox wrapper
 │           │
 │           ├── testing/
 │           │   ├── __init__.py
 │           │   ├── test_vision_debug.py
-│           │   └── test_vision_integration.py
+│           │   ├── test_vision_integration.py
+│           │   └── test_cv_integration.py
 │           │
-│           ├── vision.py                # Vision API integration
+│           ├── vision.py                # Vision API with tool calling
 │           └── degradation/
 │               └── format.py            # Validation (future)
 │
 ├── requirements.txt
 ├── README.md
+├── CRITIC_REVISOR_ARCHITECTURE.md      # Detailed architecture
 └── .env
 ```
 
@@ -403,10 +508,11 @@ The codebase has been refactored for better maintainability:
 
 ### Model Configuration
 
-- **Planning**: Google Gemini 3 Pro (via OpenRouter) - optimized for problem decomposition
-- **Solving**: GPT-4.1-mini-2025-04-14 - optimized for code generation and variable naming
-- **Vision**: GPT-4o - advanced vision capabilities for image-based problems
-- **Temperature**: 0.1 for all models - slight randomness helps avoid degenerate code generation
+- **Planning**: Gemini 3 Pro (via Google Generative AI) - optimized for problem decomposition
+- **Physics Review**: Gemini 3 Flash (via Google Generative AI) - optimized for auditing and revision
+- **Solving**: GPT-4.1-mini-2025-04-14 (via OpenAI) - optimized for code generation and variable naming
+- **Vision**: GPT-4o (via OpenAI) - advanced vision capabilities + tool calling for image analysis
+- **Temperature**: 0.1 for planning/vision, 0.0 for revision - low randomness ensures consistency
 
 ### Performance Features
 
@@ -418,8 +524,10 @@ The codebase has been refactored for better maintainability:
 ### Expected Performance
 
 - **Per-step solving time**: 4-7 seconds (with hot sandbox and direct API)
-- **Per-image vision analysis**: 20-60 seconds (includes API latency)
-- **Overall pipeline**: Depends on plan complexity and step count
+- **Per-image vision analysis**: 20-90 seconds with CV tools (simple extraction ≈20s, complex preprocessing ≈90s)
+- **CV tool preprocessing**: 0-10 iterations max (typically 2-5 tools used)
+- **Physics review time**: 3-8 seconds per audit pass
+- **Overall pipeline**: ~1-2 minutes for simple problem, 3-5 minutes for complex multi-step physics problems
 
 ## Architecture & Design Decisions
 
