@@ -20,3 +20,8 @@ ruff>=0.1.8
 numpy>=1.24.0
 sympy>=1.12
 pint>=0.23.0
+
+# Image processing (for Active Vision CV tools)
+Pillow>=10.0.0
+opencv-python>=4.8.0
+scipy>=1.11.0

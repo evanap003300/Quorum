@@ -14,7 +14,7 @@ from solver.parsing import validate_result
 from planner.schema import StateObject, Plan
 from planner.critics.physics_lawyer import audit_plan
 from planner.revisor import revise_plan
-from vision import analyze_problem_image
+from vision import analyze_problem_image, analyze_problem_image_with_cv_tools
 from tools.evaluation.code_interpreter import init_sandbox
 
 # Import Sandbox from e2b
@@ -35,23 +35,32 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
     problem_start_time = time.time()
     vision_cost = 0.0
     vision_time = 0.0
+    intermediate_paths = []
 
     # Step 0: Vision analysis (if image provided)
     if image_path:
         print("="*60)
-        print("VISION ANALYSIS")
+        print("VISION ANALYSIS (WITH CV TOOLS)")
         print("="*60)
 
         vision_start_time = time.time()
         try:
-            problem_text, diagram_context, vision_cost = analyze_problem_image(image_path)
+            problem_text, diagram_context, vision_cost, intermediate_paths = analyze_problem_image_with_cv_tools(image_path)
             vision_time = time.time() - vision_start_time
 
             print(f"Image: {image_path}")
             print(f"Extracted problem text: {problem_text[:100]}...")
             if diagram_context != "None":
                 print(f"Diagram context: {diagram_context[:100]}...")
-            print(f"Vision analysis time: {vision_time:.2f}s | Cost: ${vision_cost:.4f}\n")
+
+            # Log intermediate images for debugging
+            if intermediate_paths:
+                print(f"\n✓ Image preprocessing: {len(intermediate_paths)} steps")
+                for i, path in enumerate(intermediate_paths, 1):
+                    from pathlib import Path
+                    print(f"  Step {i}: {Path(path).name}")
+
+            print(f"\nVision analysis time: {vision_time:.2f}s | Cost: ${vision_cost:.4f}\n")
 
             # Merge with provided text (if any)
             if problem:
