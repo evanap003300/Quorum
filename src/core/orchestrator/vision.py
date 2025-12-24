@@ -854,21 +854,20 @@ def analyze_observation(
             "enhance_clarity": lambda args: enhance_clarity(current_image, **args)
         }
 
-        # Initialize Gemini with tools and JSON output
+        # Initialize Gemini with tools (removed JSON response type)
         load_dotenv()
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
         vision_model = genai.GenerativeModel(
             model_name=model,
             generation_config={
                 "temperature": 0.1,
-                "max_output_tokens": 500,
-                "response_mime_type": "application/json"
+                "max_output_tokens": 500
             },
             tools=[cv_tools]  # ENABLE TOOL CALLING
         )
 
         # Create system prompt
-        system_prompt = f"""You are analyzing a physics diagram to extract specific visual properties.
+        system_prompt = f"""You are analyzing a physics diagram to extract specific values or properties.
 
 You have access to CV tools to improve your view:
 - apply_grid + crop_grid_square: Zoom into specific regions
@@ -879,18 +878,12 @@ You have access to CV tools to improve your view:
 WORKFLOW:
 1. If the feature you need to observe is small or unclear, use CV tools to get a better view
 2. Once you have a clear view, answer the observation question
-3. Respond in JSON format with qualitative description
-
-RESPOND WITH THIS JSON STRUCTURE:
-{{
-  "value": "<qualitative observation (e.g., 'diverging', 'increasing', 'positive')>",
-  "description": "<detailed explanation of what you observed>",
-  "unit": "dimensionless"
-}}
+3. Respond ONLY in plain text format as instructed
 
 {question}
 
-IMPORTANT: Respond with valid JSON only. No other text.
+CRITICAL: Respond ONLY in plain text format. Do NOT generate JSON. Do NOT add explanations.
+Just respond with the value(s) as instructed above.
 """
 
         # Start chat session
@@ -906,13 +899,15 @@ IMPORTANT: Respond with valid JSON only. No other text.
         # Tool calling loop
         for iteration in range(max_iterations):
             # Check if model wants to use tools
+            function_call = None
             if (response.candidates and
                 response.candidates[0].content.parts and
                 hasattr(response.candidates[0].content.parts[0], 'function_call')):
-
                 function_call = response.candidates[0].content.parts[0].function_call
+
+            if function_call is not None:
                 tool_name = function_call.name
-                args = dict(function_call.args)
+                args = dict(function_call.args) if function_call.args else {}
 
                 # Execute CV tool
                 if tool_name in tool_map:
@@ -956,29 +951,28 @@ IMPORTANT: Respond with valid JSON only. No other text.
                         total_cost += (usage.prompt_token_count * pricing["input"] +
                                        usage.candidates_token_count * pricing["output"]) / 1_000_000
             else:
-                # Model provided JSON response - parse it
+                # Model provided plain text response - parse VALUE UNIT format
                 try:
                     if response.text:
-                        try:
-                            response_json = json.loads(response.text)
-                            value_with_unit = response_json.get("value", "")
+                        print(f"DEBUG OBSERVE: Raw response text: {response.text}")
+                        output_text = response.text.strip()
 
-                            # Split value and unit (last space separates them)
-                            if " " in value_with_unit:
-                                parts = value_with_unit.rsplit(" ", 1)
-                                value = parts[0]
-                                unit = parts[1]
-                            else:
-                                value = value_with_unit
-                                unit = "dimensionless"
-
+                        # Parse: VALUE UNIT format
+                        parts = output_text.split(None, 1)  # Split on first whitespace
+                        if len(parts) == 2:
+                            value = parts[0]
+                            unit = parts[1]
+                            print(f"DEBUG OBSERVE: Parsed as VALUE={value}, UNIT={unit}")
                             return value, unit, total_cost
-                        except json.JSONDecodeError as parse_err:
-                            # JSON parse failed, fallback to raw text
-                            print(f"⚠ Failed to parse OBSERVE response as JSON: {parse_err}")
-                            print(f"  Raw response: {response.text[:200]}")
-                            output_text = response.text.strip()
-                            return output_text, "dimensionless", total_cost
+                        elif len(parts) == 1:
+                            # Only value, no unit
+                            value = parts[0]
+                            print(f"DEBUG OBSERVE: Parsed as VALUE={value}, UNIT=dimensionless")
+                            return value, "dimensionless", total_cost
+                        else:
+                            # Empty or malformed
+                            print(f"⚠ Could not parse OBSERVE response: {output_text}")
+                            return "", "dimensionless", total_cost
                     else:
                         print(f"⚠ Empty OBSERVE response text")
                         return "", "dimensionless", total_cost
@@ -1158,15 +1152,14 @@ def analyze_observation_multi(
             "enhance_clarity": lambda args: enhance_clarity(current_image, **args)
         }
 
-        # Initialize Gemini with JSON response format
+        # Initialize Gemini (removed JSON response type - let model respond naturally)
         load_dotenv()
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
         vision_model = genai.GenerativeModel(
             model_name=model,
             generation_config={
                 "temperature": 0.1,
-                "max_output_tokens": 1000,
-                "response_mime_type": "application/json"
+                "max_output_tokens": 2500
             },
             tools=[cv_tools]  # ENABLE TOOL CALLING
         )
@@ -1178,21 +1171,8 @@ You have CV tools available to improve your view before answering.
 
 {question}
 
-RESPOND WITH THIS JSON STRUCTURE FOR MULTIPLE VARIABLES:
-{{
-  "var_name_1": {{
-    "value": "<qualitative observation>",
-    "description": "<detailed explanation>",
-    "unit": "dimensionless"
-  }},
-  "var_name_2": {{
-    "value": "<qualitative observation>",
-    "description": "<detailed explanation>",
-    "unit": "dimensionless"
-  }}
-}}
-
-IMPORTANT: Respond with valid JSON only. No other text.
+CRITICAL: Respond ONLY in plain text format. Do NOT generate JSON. Do NOT add explanations.
+Just respond with the variable values as instructed above.
 """
 
         # Start chat
@@ -1214,13 +1194,15 @@ IMPORTANT: Respond with valid JSON only. No other text.
         print(f"DEBUG: Starting tool calling loop")
         for iteration in range(max_iterations):
             print(f"DEBUG: Tool loop iteration {iteration}")
+            function_call = None
             if (response.candidates and
                 response.candidates[0].content.parts and
                 hasattr(response.candidates[0].content.parts[0], 'function_call')):
-
                 function_call = response.candidates[0].content.parts[0].function_call
+
+            if function_call is not None:
                 tool_name = function_call.name
-                args = dict(function_call.args)
+                args = dict(function_call.args) if function_call.args else {}
 
                 if tool_name in tool_map:
                     try:
@@ -1259,43 +1241,69 @@ IMPORTANT: Respond with valid JSON only. No other text.
                         total_cost += (usage.prompt_token_count * pricing["input"] +
                                        usage.candidates_token_count * pricing["output"]) / 1_000_000
             else:
-                # Parse multi-output JSON response
+                # Parse multi-output plain text response (format: VAR_NAME VALUE UNIT per line)
                 try:
                     if response.text:
-                        response_json = json.loads(response.text)
+                        print(f"DEBUG OBSERVE: Raw response text: {response.text}")
 
-                        # Extract values and units for each variable
+                        # Parse plain text format: VAR_NAME VALUE UNIT
                         values_dict = {}
                         units_dict = {}
 
+                        # Initialize all variables as None/unknown
                         for var_name in var_names:
-                            if var_name in response_json:
-                                value_with_unit = response_json[var_name]
+                            values_dict[var_name] = None
+                            units_dict[var_name] = "unknown"
 
-                                # Split value and unit (last space separates them)
-                                if isinstance(value_with_unit, str) and " " in value_with_unit:
-                                    parts = value_with_unit.rsplit(" ", 1)
-                                    value = parts[0]
-                                    unit = parts[1]
+                        # Parse each line
+                        lines = response.text.strip().split('\n')
+                        print(f"DEBUG OBSERVE: Parsed {len(lines)} lines")
+                        print(f"DEBUG OBSERVE: Expected variables: {var_names}")
+
+                        for line in lines:
+                            line = line.strip()
+                            if not line:
+                                continue
+
+                            # Parse: VAR_NAME VALUE UNIT
+                            parts = line.split(None, 2)  # Split on whitespace, max 3 parts
+                            if len(parts) >= 2:
+                                var_name = parts[0]
+
+                                if var_name in var_names:
+                                    if len(parts) == 3:
+                                        # VAR_NAME VALUE UNIT
+                                        value = parts[1]
+                                        unit = parts[2]
+                                    elif len(parts) == 2:
+                                        # VAR_NAME VALUE (no unit)
+                                        value = parts[1]
+                                        unit = "dimensionless"
+
+                                    values_dict[var_name] = value
+                                    units_dict[var_name] = unit
+                                    print(f"DEBUG OBSERVE: Found {var_name} = {value} {unit}")
                                 else:
-                                    value = str(value_with_unit)
-                                    unit = "dimensionless"
-
-                                values_dict[var_name] = value
-                                units_dict[var_name] = unit
+                                    print(f"DEBUG OBSERVE: Skipping unknown variable {var_name}")
                             else:
-                                values_dict[var_name] = None
-                                units_dict[var_name] = "unknown"
+                                print(f"DEBUG OBSERVE: Skipping malformed line: {line}")
 
+                        # Report missing variables
+                        for var_name in var_names:
+                            if values_dict[var_name] is None:
+                                print(f"DEBUG OBSERVE: Missing {var_name} - setting to None/unknown")
+
+                        print(f"DEBUG OBSERVE: Final values_dict = {values_dict}")
+                        print(f"DEBUG OBSERVE: Final units_dict = {units_dict}")
                         return values_dict, units_dict, total_cost
                     else:
                         # Empty response
                         values_dict = {v: None for v in var_names}
                         units_dict = {v: "unknown" for v in var_names}
                         return values_dict, units_dict, total_cost
-                except (json.JSONDecodeError, ValueError, KeyError) as parse_error:
-                    # JSON parsing failed - log for debugging
-                    print(f"⚠ JSON parse error in OBSERVE response: {parse_error}")
+                except Exception as parse_error:
+                    # Parsing failed - log for debugging
+                    print(f"⚠ Parse error in OBSERVE response: {parse_error}")
                     if response.text:
                         print(f"  Raw response: {response.text[:200]}")
                     # Fallback: return None for all variables
@@ -1303,40 +1311,46 @@ IMPORTANT: Respond with valid JSON only. No other text.
                     units_dict = {v: "unknown" for v in var_names}
                     return values_dict, units_dict, total_cost
 
-        # Max iterations reached - try to parse final response
+        # Max iterations reached - try to parse final response as plain text
         try:
             if response and response.text:
-                try:
-                    response_json = json.loads(response.text)
-                except json.JSONDecodeError as parse_err:
-                    print(f"⚠ Failed to parse final OBSERVE response as JSON: {parse_err}")
-                    print(f"  Raw response: {response.text[:200]}")
-                    # Return None for all variables
-                    values_dict = {v: None for v in var_names}
-                    units_dict = {v: "unknown" for v in var_names}
-                    return values_dict, units_dict, total_cost
+                print(f"DEBUG OBSERVE (max iterations): Parsing final response")
+                print(f"  Response text: {response.text[:300]}")
 
+                # Parse plain text format: VAR_NAME VALUE UNIT
                 values_dict = {}
                 units_dict = {}
 
+                # Initialize all variables as None/unknown
                 for var_name in var_names:
-                    if var_name in response_json:
-                        value_with_unit = response_json[var_name]
+                    values_dict[var_name] = None
+                    units_dict[var_name] = "unknown"
 
-                        # Split value and unit (last space separates them)
-                        if isinstance(value_with_unit, str) and " " in value_with_unit:
-                            parts = value_with_unit.rsplit(" ", 1)
-                            value = parts[0]
-                            unit = parts[1]
-                        else:
-                            value = str(value_with_unit)
-                            unit = "dimensionless"
+                # Parse each line
+                lines = response.text.strip().split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
 
-                        values_dict[var_name] = value
-                        units_dict[var_name] = unit
-                    else:
-                        values_dict[var_name] = None
-                        units_dict[var_name] = "unknown"
+                    # Parse: VAR_NAME VALUE UNIT
+                    parts = line.split(None, 2)  # Split on whitespace, max 3 parts
+                    if len(parts) >= 2:
+                        var_name = parts[0]
+
+                        if var_name in var_names:
+                            if len(parts) == 3:
+                                # VAR_NAME VALUE UNIT
+                                value = parts[1]
+                                unit = parts[2]
+                            elif len(parts) == 2:
+                                # VAR_NAME VALUE (no unit)
+                                value = parts[1]
+                                unit = "dimensionless"
+
+                            values_dict[var_name] = value
+                            units_dict[var_name] = unit
+                            print(f"DEBUG OBSERVE (max iterations): Found {var_name} = {value} {unit}")
 
                 return values_dict, units_dict, total_cost
             else:
@@ -1344,7 +1358,7 @@ IMPORTANT: Respond with valid JSON only. No other text.
                 values_dict = {v: None for v in var_names}
                 units_dict = {v: "unknown" for v in var_names}
                 return values_dict, units_dict, total_cost
-        except (ValueError, KeyError) as e:
+        except Exception as e:
             print(f"⚠ Error processing OBSERVE final response: {e}")
             values_dict = {v: None for v in var_names}
             units_dict = {v: "unknown" for v in var_names}

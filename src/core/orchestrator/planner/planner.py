@@ -76,7 +76,14 @@ def plan(problem: str) -> Tuple[StateObject, Plan, float]:
 
     # Parse JSON
     raw_response = completion.text
-    data = json.loads(raw_response)
+    try:
+        data = json.loads(raw_response)
+    except json.JSONDecodeError as e:
+        print(f"JSON Parse Error: {e}")
+        print(f"Response length: {len(raw_response)}")
+        print(f"First 500 chars: {raw_response[:500]}")
+        print(f"Last 500 chars: {raw_response[-500:]}")
+        raise
 
     # Validate with Pydantic (this will raise errors if schema is wrong)
     state = StateObject(**data['state'])

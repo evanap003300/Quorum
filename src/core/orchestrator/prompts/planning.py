@@ -58,13 +58,26 @@ PLANNER_PROMPT = """You are an expert physics and mathematics problem planner. Y
    - "convert" = change units
    - "observe" = analyze visual properties from the diagram (qualitative assessment)
 
-2b. **OBSERVE OPERATIONS** (for visual analysis from diagrams):
-   - Use "observe" if a step requires analyzing visual properties that aren't explicitly written in text
-   - Examples: "Determine if arrows are diverging", "Check if slope is positive at point P", "Count peaks in the graph"
-   - Do NOT use "extract" for visual features - use "observe" instead
-   - OBSERVE steps should ask specific, answerable questions to the vision model
-   - OBSERVE outputs are qualitative strings (e.g., "positive", "diverging", "increasing", "3")
-   - Batch multiple visual observations into one OBSERVE step when possible
+2b. **DATA EXTRACTION SOURCE RULE** (CRITICAL - prevents symbolic zombies):
+   - **IF DATA IS IN TEXT**: Use "extract" (e.g., "mass m = 5 kg" or "from rest means v0 = 0")
+   - **IF DATA IS IN A TABLE, GRAPH, OR DIAGRAM**: Use "observe" (even if extracting numbers, not analyzing)
+   - Examples:
+     * "Find value T0 at (x=4, y=4) in the table" → OBSERVE (data in table)
+     * "Extract T0 = 30 deg from problem text" → EXTRACT (data in text)
+     * "Find nearest grid point x0, y0 and temperatures from the table" → OBSERVE (multiple values from table)
+   - **Why this matters**: EXTRACT only reads problem text/summary. It cannot see table cells or graph points. Only OBSERVE can look at the diagram and extract values from it.
+
+2c. **OBSERVE OPERATIONS** (for visual analysis from diagrams):
+   - Use "observe" for:
+     * **Value extraction from tables/graphs/diagrams** (numbers, symbols, measurements)
+     * **Visual property analysis** (is slope positive? are arrows diverging?)
+     * **Diagram interpretation** (count peaks, identify patterns)
+   - Examples:
+     * "Read temperature values from the 6x6 table at key points" → OBSERVE (table data extraction)
+     * "Determine if the curve is concave up or down" → OBSERVE (visual property)
+     * "Count peaks in the function" → OBSERVE (diagram interpretation)
+   - OBSERVE outputs can be numeric values, symbolic values, or descriptive strings
+   - Batch multiple observations into one OBSERVE step when possible
    - Use "outputs": ["var1", "var2"] and "expected_units": {"var1": "dimensionless", ...} format
 
 3. **Variable naming**: Use clear, standard physics notation
@@ -285,6 +298,81 @@ Response:
     ],
     "final_output": "div_sign",
     "approach": "Use OBSERVE to analyze vector field behavior visually at point P, then map results to divergence sign"
+  }
+}
+
+**Example 5 - Linear Approximation from Table (OBSERVE for Table Data):**
+Problem: "Find a linear approximation to the temperature function T(x, y) and use it to estimate T(5, 3.8). A table shows temperature values at grid points."
+Diagram: A 6x6 table with x values (0-5) and y values (0-4) containing temperature values.
+
+Response:
+{
+  "state": {
+    "problem_text": "Find a linear approximation to the temperature function T(x, y) and use it to estimate the temperature at the point (5, 3.8).",
+    "domain": "math",
+    "variables": {
+      "x_target": {"name": "x_target", "description": "target x-coordinate", "expected_unit": "dimensionless", "value": null, "unit": null, "source_step": null, "is_symbolic": false},
+      "y_target": {"name": "y_target", "description": "target y-coordinate", "expected_unit": "dimensionless", "value": null, "unit": null, "source_step": null, "is_symbolic": false},
+      "x0": {"name": "x0", "description": "x-coordinate of nearest grid point", "expected_unit": "dimensionless", "value": null, "unit": null, "source_step": null, "is_symbolic": false},
+      "y0": {"name": "y0", "description": "y-coordinate of nearest grid point", "expected_unit": "dimensionless", "value": null, "unit": null, "source_step": null, "is_symbolic": false},
+      "T0": {"name": "T0", "description": "temperature at (x0, y0)", "expected_unit": "deg C", "value": null, "unit": null, "source_step": null, "is_symbolic": false},
+      "T_dx": {"name": "T_dx", "description": "temperature at (x0+1, y0)", "expected_unit": "deg C", "value": null, "unit": null, "source_step": null, "is_symbolic": false},
+      "T_dy": {"name": "T_dy", "description": "temperature at (x0, y0+1)", "expected_unit": "deg C", "value": null, "unit": null, "source_step": null, "is_symbolic": false},
+      "Tx": {"name": "Tx", "description": "partial derivative with respect to x", "expected_unit": "deg C", "value": null, "unit": null, "source_step": null, "is_symbolic": false},
+      "Ty": {"name": "Ty", "description": "partial derivative with respect to y", "expected_unit": "deg C", "value": null, "unit": null, "source_step": null, "is_symbolic": false},
+      "T_est": {"name": "T_est", "description": "estimated temperature at target point", "expected_unit": "deg C", "value": null, "unit": null, "source_step": null, "is_symbolic": false}
+    },
+    "assumptions": ["nearest grid point is sufficient", "linear approximation is valid", "table values are exact"]
+  },
+  "plan": {
+    "steps": [
+      {
+        "step_id": 1,
+        "operation": "extract",
+        "description": "Extract target coordinates from problem text",
+        "inputs": [],
+        "outputs": ["x_target", "y_target"],
+        "formula": null,
+        "expected_units": {"x_target": "dimensionless", "y_target": "dimensionless"},
+        "justification": "Problem explicitly states: estimate T at point (5, 3.8)",
+        "is_symbolic": false
+      },
+      {
+        "step_id": 2,
+        "operation": "observe",
+        "description": "Read temperature values from table: nearest point (x0,y0), its temp T0, and neighbor temps T_dx, T_dy",
+        "inputs": [],
+        "outputs": ["x0", "y0", "T0", "T_dx", "T_dy"],
+        "formula": null,
+        "expected_units": {"x0": "dimensionless", "y0": "dimensionless", "T0": "deg C", "T_dx": "deg C", "T_dy": "deg C"},
+        "justification": "Data is in the table. Must use OBSERVE to read table cells. x0,y0 = nearest grid point to (5, 3.8); T0 = value at (x0,y0); T_dx = value at (x0+1, y0); T_dy = value at (x0, y0+1)",
+        "is_symbolic": false
+      },
+      {
+        "step_id": 3,
+        "operation": "calculate",
+        "description": "Calculate partial derivatives from finite differences",
+        "inputs": ["T0", "T_dx", "T_dy"],
+        "outputs": ["Tx", "Ty"],
+        "formula": "Tx = T_dx - T0; Ty = T_dy - T0",
+        "expected_units": {"Tx": "deg C", "Ty": "deg C"},
+        "justification": "Central difference approximations: ∂T/∂x ≈ (T(x0+1,y0) - T(x0,y0))/1, similarly for y",
+        "is_symbolic": false
+      },
+      {
+        "step_id": 4,
+        "operation": "calculate",
+        "description": "Apply linear approximation formula T ≈ T0 + Tx*(x-x0) + Ty*(y-y0)",
+        "inputs": ["x_target", "y_target", "x0", "y0", "T0", "Tx", "Ty"],
+        "output": "T_est",
+        "formula": "T_est = T0 + Tx*(x_target - x0) + Ty*(y_target - y0)",
+        "expected_unit": "deg C",
+        "justification": "Standard linear (tangent plane) approximation for multivariable functions",
+        "is_symbolic": false
+      }
+    ],
+    "final_output": "T_est",
+    "approach": "Extract target coords as text, use OBSERVE to read table values, compute partial derivatives, apply linear approximation formula"
   }
 }
 

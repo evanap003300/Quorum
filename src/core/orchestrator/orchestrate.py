@@ -216,46 +216,58 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
         if len(outputs) > 1:
             # Multi-output step
             assert isinstance(value, dict) and isinstance(unit, dict), "Multi-output step should return dicts"
+            print(f"DEBUG: Multi-output step received:")
+            print(f"  Expected variables: {outputs}")
+            print(f"  Received keys: {list(value.keys())}")
+            print(f"  Values: {value}")
+            print(f"  Units: {unit}")
+
             for var_name in outputs:
                 if var_name in value and var_name in unit:
-                    # Validate result before updating state
-                    is_valid, error_msg = validate_result(value[var_name], unit[var_name], step, state)
-                    if not is_valid:
-                        print(f"  ✗ VALIDATION FAILED: {error_msg}")
-                        # Cleanup sandbox before returning
-                        if sandbox:
-                            try:
-                                sandbox.kill()
-                            except:
-                                pass
-                        return {
-                            "success": False,
-                            "error": f"Step {step.step_id} failed validation: {error_msg}",
-                            "final_answer": None,
-                            "final_unit": None,
-                            "state": state,
-                            "plan": plan_obj,
-                            "failed_at_step": step.step_id,
-                            "total_time": time.time() - problem_start_time,
-                            "plan_time": plan_time,
-                            "review_time": review_time,
-                            "execution_time": time.time() - execution_start_time,
-                            "plan_cost": plan_cost,
-                            "review_cost": review_cost,
-                            "execution_cost": total_cost,
-                            "vision_cost": vision_cost,
-                            "total_cost": plan_cost + review_cost + total_cost + vision_cost
-                        }
+                    # Only update if value is not None
+                    if value[var_name] is not None:
+                        # Validate result before updating state
+                        is_valid, error_msg = validate_result(value[var_name], unit[var_name], step, state)
+                        if not is_valid:
+                            print(f"  ✗ VALIDATION FAILED: {error_msg}")
+                            # Cleanup sandbox before returning
+                            if sandbox:
+                                try:
+                                    sandbox.kill()
+                                except:
+                                    pass
+                            return {
+                                "success": False,
+                                "error": f"Step {step.step_id} failed validation: {error_msg}",
+                                "final_answer": None,
+                                "final_unit": None,
+                                "state": state,
+                                "plan": plan_obj,
+                                "failed_at_step": step.step_id,
+                                "total_time": time.time() - problem_start_time,
+                                "plan_time": plan_time,
+                                "review_time": review_time,
+                                "execution_time": time.time() - execution_start_time,
+                                "plan_cost": plan_cost,
+                                "review_cost": review_cost,
+                                "execution_cost": total_cost,
+                                "vision_cost": vision_cost,
+                                "total_cost": plan_cost + review_cost + total_cost + vision_cost
+                            }
 
-                    state.variables[var_name].value = value[var_name]
-                    state.variables[var_name].unit = unit[var_name]
-                    state.variables[var_name].source_step = step.step_id
-                    print(f"  ✓ {var_name} = {value[var_name]} {unit[var_name]}")
+                        state.variables[var_name].value = value[var_name]
+                        state.variables[var_name].unit = unit[var_name]
+                        state.variables[var_name].source_step = step.step_id
+                        print(f"  ✓ {var_name} = {value[var_name]} {unit[var_name]}")
 
-                    # Check for unit mismatch
-                    expected_unit = step.get_unit(var_name)
-                    if unit[var_name] != expected_unit:
-                        print(f"    ⚠ WARNING: Expected unit {expected_unit}, got {unit[var_name]}")
+                        # Check for unit mismatch
+                        expected_unit = step.get_unit(var_name)
+                        if unit[var_name] != expected_unit:
+                            print(f"    ⚠ WARNING: Expected unit {expected_unit}, got {unit[var_name]}")
+                    else:
+                        print(f"  ⚠ {var_name} = None (missing from OBSERVE response)")
+                else:
+                    print(f"  ⚠ {var_name} missing from response dicts")
         else:
             # Single-output step
             var_name = outputs[0]
@@ -428,7 +440,8 @@ def test_orchestrator():
     vector_field_path = os.path.join(current_dir, 'vector_field_image.png')
 
     problems = [
-        """Determine whether the divergence of each vector field (in green) at the indicated point $P$ (in blue) is positive, negative, or zero."""
+        """Find a linear approximation to the temperature function T(x, y) and use it to
+estimate the temperature at the point (5, 3.8)."""
     ]
 
     for i, problem in enumerate(problems, 1):
@@ -436,7 +449,7 @@ def test_orchestrator():
         print(f"PROBLEM {i}")
         print("="*70)
 
-        result = solve_problem(problem, image_path=vector_field_path)
+        result = solve_problem(problem, image_path='table.png')
         
         if result["success"]:
             print(f"\n✓ SUCCESS: {result['final_answer']} {result['final_unit']}")

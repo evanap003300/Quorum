@@ -179,38 +179,43 @@ def build_observe_prompt(step: Step, state: StateObject) -> str:
             unit = step.get_unit(var_name)
             variables_section += f"  - {var_name}: {var.description} (unit: {unit})\n"
 
-        return f"""READ THESE VALUES FROM THE DIAGRAM:
-
-{variables_section}
+        return f"""EXTRACT THESE VALUES FROM THE DIAGRAM:
 
 TASK:
 {step.description}
 
-INSTRUCTIONS:
-1. Use computer vision tools if needed (crop regions, enhance clarity, apply grid for reference)
-2. Locate each variable in the diagram (table, graph, label, etc.)
-3. Read the exact value and unit
-4. Return the numeric or symbolic value you find
+VARIABLES TO EXTRACT:
+{variables_section}
 
-RESPONSE FORMAT (STRICT JSON):
-Return ONLY valid JSON with this exact structure:
+CRITICAL INSTRUCTIONS:
+1. Use computer vision tools to locate the correct regions in the diagram
+   - Use grid overlay if helpful to identify table cells
+   - Crop and enhance regions to read values clearly
+   - If values are hard to read, use binarize_image or enhance_clarity
+2. Find EACH variable in the table/diagram exactly as described
+3. Return ALL {len(outputs)} variables in the response
 
-{{
-  "var_name_1": "value_with_unit",
-  "var_name_2": "value_with_unit"
-}}
+RESPONSE FORMAT (PLAIN TEXT - one variable per line):
+For each variable, respond with EXACTLY this format on a separate line:
 
-CRITICAL:
-- Return ONLY the JSON object, no other text
-- Include units in the value: "15 m/s", "3.2", "M kg", etc.
-- If symbolic (variable letter), return the letter: "M", "L", "θ"
-- All quotes and JSON must be valid
+VAR_NAME VALUE UNIT
 
-Example response:
-{{
-  "T_ref": "72 C",
-  "h": "5 m"
-}}
+Examples:
+x0 4 dimensionless
+y0 3 dimensionless
+T0 72 C
+T_x1 74 C
+T_y1 70 C
+
+CRITICAL RULES:
+- Respond with ONLY plain text, no JSON or markdown
+- One variable per line in format: VAR_NAME VALUE UNIT
+- Separate VAR_NAME, VALUE, and UNIT with single spaces
+- Include the unit: "4 dimensionless", "72 C", "74 deg", "M kg", etc.
+- Every variable must be included, in the same order as listed above
+- If you cannot find a value, use "unknown dimensionless"
+- Do not skip any variables
+- Do not add extra explanations
 """
 
     # Single variable observation
@@ -219,7 +224,9 @@ Example response:
 
     return f"""READ THIS VALUE FROM THE DIAGRAM:
 
-{var.description} (unit: {unit})
+Variable: {outputs[0]}
+Description: {var.description}
+Expected unit: {unit}
 
 TASK:
 {step.description}
@@ -230,26 +237,22 @@ INSTRUCTIONS:
 3. Read the exact value and unit
 4. Return what you find
 
-RESPONSE FORMAT (STRICT JSON):
-Return ONLY valid JSON with this exact structure:
+RESPONSE FORMAT (PLAIN TEXT):
+Return ONLY the value with unit on a single line:
 
-{{
-  "value": "measurement_with_unit"
-}}
+VALUE UNIT
+
+Examples:
+15 m/s
+72 C
+3.2 kg
+M dimensionless
+θ dimensionless
 
 CRITICAL:
-- Return ONLY the JSON object, no other text
-- Include units: "15 m/s", "72 C", "3.2 kg", "M", "θ", etc.
-- If it's a symbolic variable (single letter), just return the letter
-- If it's a number, include the unit
-- All quotes and JSON must be valid
-
-Example responses:
-{{
-  "value": "15 m/s"
-}}
-
-{{
-  "value": "M"
-}}
+- Respond with ONLY plain text, no JSON or markdown
+- Format: VALUE UNIT (separated by a single space)
+- Include the unit: "15 m/s", "72 C", "3.2 kg", "M dimensionless", etc.
+- If it's a symbolic variable (single letter), return: LETTER dimensionless
+- Do not add explanations or extra text
 """
