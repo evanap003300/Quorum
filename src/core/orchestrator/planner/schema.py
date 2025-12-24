@@ -10,6 +10,7 @@ class Variable(BaseModel):
     unit: Optional[str] = None
     source_step: Optional[int] = None
     is_symbolic: bool = False  # True if this is a symbolic variable
+    extraction_hint: Optional[str] = None  # e.g., "table row 4, column 2" or "at (x=4, y=4)"
 
 class StateObject(BaseModel):
     problem_text: str

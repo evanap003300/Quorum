@@ -19,7 +19,9 @@ def build_extract_prompt(step: Step, state: StateObject) -> str:
         for var_name in outputs:
             var = state.variables[var_name]
             unit = step.get_unit(var_name)
-            variables_section += f"- {var_name}: {var.description} (unit: {unit})\n"
+            # Include extraction hint if available
+            hint_text = f" - LOCATION: {var.extraction_hint}" if var.extraction_hint else ""
+            variables_section += f"- {var_name}: {var.description} (unit: {unit}){hint_text}\n"
 
         base_prompt = f"""EXTRACT ALL THESE VARIABLES:
 {variables_section}
@@ -28,30 +30,35 @@ PROBLEM STATEMENT:
 {state.problem_text}
 
 WRITE PYTHON CODE that:
-1. Reads the problem above
-2. Identifies the value or symbol for EACH variable from the problem text
-3. PRINTS each variable on a separate line in EXACTLY this format:
+1. Reads the problem above carefully
+2. For EACH variable, find its ACTUAL VALUE in the problem text (not the variable name)
+3. Use the LOCATION hint if provided to find the exact value
+4. PRINTS each variable on a separate line in EXACTLY this format:
 
    VAR_NAME VALUE UNIT
 
-CRITICAL: You must extract ALL {len(outputs)} variables: {", ".join(outputs)}
+CRITICAL RULES:
+✗ DO NOT use the variable name as the VALUE (e.g., "T_ref T_ref C" is WRONG)
+✓ DO extract the actual number from the problem (e.g., "T_ref 72 C" is correct)
 
-OUTPUT EXAMPLES (for symbolic variables):
-m m kg
-M M kg
-R R m
-F F N
+You must extract ALL {len(outputs)} variables: {", ".join(outputs)}
 
-OUTPUT EXAMPLES (for numeric values):
+OUTPUT EXAMPLES (for numeric values from a table):
+T_ref 72 C
+T_x_plus 74 C
+T_x_minus 70 C
+
+OUTPUT EXAMPLES (for values directly stated in text):
 m 5.0 kg
 g 9.81 m/s**2
 
 RULES:
-- Extract from problem text (do not make up values)
-- Use sci_constants for physical constants
+- Extract NUMERIC VALUES from tables, grids, or stated values
+- Use LOCATION hints to find the correct row/column in tables
 - For symbolic variables, use the variable name as the VALUE
 - Print EVERY variable, even if they appear later in the problem
-- Each variable must be on its own line"""
+- Each variable must be on its own line
+- NO variable should have its name as both VAR_NAME and VALUE"""
 
         if step.is_symbolic:
             symbolic_section = f"""

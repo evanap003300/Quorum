@@ -164,6 +164,7 @@ def validate_result(value: Union[float, str], unit: str, step: Step, state: Stat
     # Everything else is OK - let the downstream math/validation layers catch issues
     # A unit mismatch doesn't mean the result is wrong - it might just need conversion
     # A dimensionless result might be intentional - let the calculation layer validate
+    # A value that matches variable name might be intentional (symbolic/given as name)
 
     return True, None
 

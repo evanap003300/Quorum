@@ -424,7 +424,10 @@ def test_orchestrator():
     test_image_path = os.path.join(current_dir, 'test_image.png')
 
     problems = [
-        """A bead of mass $m$ slides without friction on a circular hoop of radius $R$. The hoop lies in a vertical plane and rotates with a constant angular velocity $\omega$ about its vertical diameter. Gravity $g$ acts downward.1. Find the equilibrium angle $\theta_{eq}$ (measured from the bottom of the hoop) where the bead can stay stationary relative to the hoop"""
+        """The temperature of a metal plate at point (x, y) is given by T(x, y) as shown in this
+table.The units for x and y are meters and the units for temperature are degrees
+Celsius. The x-values are on the left and the y-values are along the top. Find a linear approximation to the temperature function T(x, y) and use it to
+estimate the temperature at the point (5, 3.8)."""
     ]
     
     for i, problem in enumerate(problems, 1):
@@ -432,7 +435,7 @@ def test_orchestrator():
         print(f"PROBLEM {i}")
         print("="*70)
         
-        result = solve_problem(problem)
+        result = solve_problem(problem, image_path="table.png")
         
         if result["success"]:
             print(f"\n✓ SUCCESS: {result['final_answer']} {result['final_unit']}")
