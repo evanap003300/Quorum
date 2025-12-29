@@ -2,6 +2,7 @@
 pydantic>=2.5.0
 python-dotenv>=1.0.0
 openai>=1.0.0
+google-generativeai>=0.3.0
 
 # Sandbox execution
 e2b-code-interpreter>=1.5.2
@@ -25,3 +26,8 @@ pint>=0.23.0
 Pillow>=10.0.0
 opencv-python>=4.8.0
 scipy>=1.11.0
+
+# Benchmarking
+datasets>=2.14.0          # HuggingFace datasets
+pyyaml>=6.0               # Config file support
+tqdm>=4.66.0              # Progress bars

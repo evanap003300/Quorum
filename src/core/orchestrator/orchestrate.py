@@ -131,12 +131,19 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
     print(f"  Target: {plan_obj.final_output}")
     print(f"  Planning time: {plan_time:.2f}s | Cost: ${plan_cost:.4f}\n")
 
-    # Step 1.5: Review plan with Physics Lawyer
-    print("="*60)
-    print("PHYSICS REVIEW")
-    print("="*60)
+    # Step 1.5: Review plan with Physics Lawyer (optional - can be disabled)
+    review_cost = 0.0
+    review_time = 0.0
+    skip_review = os.getenv("SKIP_PHYSICS_REVIEW", "false").lower() == "true"
 
-    plan_obj, review_cost, review_time = _review_and_revise_plan(problem, plan_obj, max_revisions=2)
+    if skip_review:
+        print(f"ℹ Physics review skipped (SKIP_PHYSICS_REVIEW=true)\n")
+    else:
+        print("="*60)
+        print("PHYSICS REVIEW")
+        print("="*60)
+
+        plan_obj, review_cost, review_time = _review_and_revise_plan(problem, plan_obj, max_revisions=2)
 
     # Step 2: Execute each step
     print("="*60)
@@ -146,26 +153,11 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
     total_cost = 0.0
     sandbox = None
 
-    # Create and initialize hot sandbox if available
-    if Sandbox is None or init_sandbox is None:
-        print(f"⚠ Hot sandbox unavailable (Sandbox={Sandbox is not None}, init={init_sandbox is not None})")
-        print(f"  Using per-step sandboxes (slower - ~20s per step)\n")
-        sandbox = None
-    else:
-        try:
-            sandbox = Sandbox()
-            asyncio.run(init_sandbox(sandbox))
-            print(f"✓ Created hot sandbox - reusing across all steps")
-            print(f"  Expected speedup: 60-90% faster per step\n")
-        except Exception as e:
-            print(f"⚠ Hot sandbox creation failed: {e}")
-            print(f"  Falling back to per-step sandboxes (slower - ~20s per step)\n")
-            if sandbox:
-                try:
-                    sandbox.kill()
-                except:
-                    pass
-            sandbox = None
+    # Note: Hot sandbox disabled - e2b API has changed
+    # Using per-step sandboxes instead (each step gets its own)
+    sandbox = None
+    print(f"ℹ Using per-step sandboxes")
+    print(f"  (Hot sandbox API changed in e2b - upgrade available for speedup)\n")
 
     # Start timing execution after sandbox is ready
     execution_start_time = time.time()
@@ -440,8 +432,9 @@ def test_orchestrator():
     vector_field_path = os.path.join(current_dir, 'vector_field_image.png')
 
     problems = [
-        """Find a linear approximation to the temperature function T(x, y) and use it to
-estimate the temperature at the point (5, 3.8)."""
+        """You find an apple core of height h. What volume of apple was eaten? (In this
+problem, an apple is a perfect sphere, and the height of the core is the height of
+the cylindrical part of its boundary.)"""
     ]
 
     for i, problem in enumerate(problems, 1):
@@ -449,7 +442,7 @@ estimate the temperature at the point (5, 3.8)."""
         print(f"PROBLEM {i}")
         print("="*70)
 
-        result = solve_problem(problem, image_path='table.png')
+        result = solve_problem(problem)
         
         if result["success"]:
             print(f"\n✓ SUCCESS: {result['final_answer']} {result['final_unit']}")

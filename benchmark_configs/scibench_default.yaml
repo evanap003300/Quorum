@@ -1,0 +1,21 @@
+# Default SciBench benchmark configuration
+# Run: python -m src.benchmarking.cli run --config benchmark_configs/scibench_default.yaml
+
+# Dataset configuration
+batch_size: 10                    # Number of problems to evaluate
+random_seed: 42                   # Reproducible random sampling
+skip_image_problems: true         # Skip problems with images
+
+# Execution configuration
+timeout_per_problem: 300          # 5 minutes per problem
+max_retries: 0                    # No retries (fail fast)
+save_intermediate_results: true   # Save after each problem
+checkpoint_frequency: 5           # Save checkpoint every 5 problems
+
+# Output configuration
+output_dir: benchmark_results     # Output directory
+verbose: true                     # Verbose logging
+
+# Evaluation configuration
+numeric_tolerance: 0.01           # 1% relative tolerance
+allow_unit_conversion: true       # Allow unit conversion when comparing

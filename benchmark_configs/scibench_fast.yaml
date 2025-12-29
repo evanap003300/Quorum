@@ -1,0 +1,12 @@
+# Fast benchmark configuration - skips physics review for speed
+# Run: SKIP_PHYSICS_REVIEW=true python -m src.benchmarking.cli run --config benchmark_configs/scibench_fast.yaml
+
+batch_size: 5
+random_seed: 42
+skip_image_problems: true
+timeout_per_problem: 120          # Shorter timeout
+checkpoint_frequency: 2
+output_dir: benchmark_results
+verbose: true
+numeric_tolerance: 0.01
+allow_unit_conversion: true

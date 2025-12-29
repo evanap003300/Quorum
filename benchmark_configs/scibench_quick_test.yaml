@@ -1,0 +1,12 @@
+# Quick test configuration for rapid iteration
+# Run: python -m src.benchmarking.cli run --config benchmark_configs/scibench_quick_test.yaml
+
+batch_size: 5
+random_seed: 42
+skip_image_problems: true
+timeout_per_problem: 300
+checkpoint_frequency: 2
+output_dir: benchmark_results
+verbose: true
+numeric_tolerance: 0.01
+allow_unit_conversion: true

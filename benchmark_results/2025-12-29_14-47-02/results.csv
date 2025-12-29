@@ -1,0 +1,4 @@
+problem_id,verdict,ground_truth_answer,ground_truth_unit,predicted_answer,predicted_unit,total_time,total_cost,error_message
+ 16.30,ERROR,8.44, $10^{34} \mathrm{~m}^{-3} \mathrm{~s}^{-1}$,,,308.44,0.0000,'Plan' object has no attribute 'get'
+12.1,ERROR,1.91, $10^{-47} \mathrm{~kg} \mathrm{~m}^2$,,,56.12,0.0000,'Plan' object has no attribute 'get'
+ e3.7(a)(b),ERROR,-87.8,$\mathrm{J} \mathrm{K}^{-1} \mathrm{~mol}^{-1}$,,,33.77,0.0000,'Plan' object has no attribute 'get'

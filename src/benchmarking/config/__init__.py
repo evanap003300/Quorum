@@ -1,0 +1,1 @@
+"""Benchmarking configuration module."""

@@ -1,0 +1,66 @@
+{
+  "total_problems": 3,
+  "correct": 0,
+  "incorrect": 0,
+  "errors": 3,
+  "timeouts": 0,
+  "accuracy": 0.0,
+  "total_time": 398.3311071395874,
+  "avg_time_per_problem": 132.7770357131958,
+  "median_time_per_problem": 56.12152910232544,
+  "time_percentiles": {
+    "p50": 56.12152910232544,
+    "p75": 182.28072202205658,
+    "p90": 257.97623777389526,
+    "p95": 283.2080763578415,
+    "p99": 303.3935472249985
+  },
+  "total_cost": 0.0,
+  "avg_cost_per_problem": 0.0,
+  "median_cost_per_problem": 0.0,
+  "cost_percentiles": {},
+  "by_source": {
+    " $10^{-47} \\mathrm{~kg} \\mathrm{~m}^2$": {
+      "source_name": " $10^{-47} \\mathrm{~kg} \\mathrm{~m}^2$",
+      "total": 1,
+      "correct": 0,
+      "incorrect": 0,
+      "errors": 1,
+      "timeouts": 0,
+      "accuracy": 0.0,
+      "avg_cost": 0.0,
+      "median_cost": 0.0,
+      "avg_time": 56.12152910232544,
+      "median_time": 56.12152910232544
+    },
+    " $10^{34} \\mathrm{~m}^{-3} \\mathrm{~s}^{-1}$": {
+      "source_name": " $10^{34} \\mathrm{~m}^{-3} \\mathrm{~s}^{-1}$",
+      "total": 1,
+      "correct": 0,
+      "incorrect": 0,
+      "errors": 1,
+      "timeouts": 0,
+      "accuracy": 0.0,
+      "avg_cost": 0.0,
+      "median_cost": 0.0,
+      "avg_time": 308.4399149417877,
+      "median_time": 308.4399149417877
+    },
+    "$\\mathrm{J} \\mathrm{K}^{-1} \\mathrm{~mol}^{-1}$": {
+      "source_name": "$\\mathrm{J} \\mathrm{K}^{-1} \\mathrm{~mol}^{-1}$",
+      "total": 1,
+      "correct": 0,
+      "incorrect": 0,
+      "errors": 1,
+      "timeouts": 0,
+      "accuracy": 0.0,
+      "avg_cost": 0.0,
+      "median_cost": 0.0,
+      "avg_time": 33.76966309547424,
+      "median_time": 33.76966309547424
+    }
+  },
+  "error_breakdown": {
+    "EXECUTION_ERROR": 3
+  }
+}

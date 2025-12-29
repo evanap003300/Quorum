@@ -1,0 +1,98 @@
+{
+  "total_problems": 5,
+  "correct": 0,
+  "incorrect": 0,
+  "errors": 5,
+  "timeouts": 0,
+  "accuracy": 0.0,
+  "total_time": 260.9280514717102,
+  "avg_time_per_problem": 52.18561029434204,
+  "median_time_per_problem": 52.14037370681763,
+  "time_percentiles": {
+    "p50": 52.14037370681763,
+    "p75": 63.42180609703064,
+    "p90": 65.13906788825989,
+    "p95": 65.7114884853363,
+    "p99": 66.16942496299744
+  },
+  "total_cost": 0.11442759999999999,
+  "avg_cost_per_problem": 0.028606899999999998,
+  "median_cost_per_problem": 0.0270046,
+  "cost_percentiles": {
+    "p50": 0.0270046,
+    "p75": 0.030878899999999997,
+    "p90": 0.03412556,
+    "p95": 0.035207779999999994,
+    "p99": 0.03607355599999999
+  },
+  "by_source": {
+    " $10^{-47} \\mathrm{~kg} \\mathrm{~m}^2$": {
+      "source_name": " $10^{-47} \\mathrm{~kg} \\mathrm{~m}^2$",
+      "total": 1,
+      "correct": 0,
+      "incorrect": 0,
+      "errors": 1,
+      "timeouts": 0,
+      "accuracy": 0.0,
+      "avg_cost": 0.0290752,
+      "median_cost": 0.0290752,
+      "avg_time": 52.14037370681763,
+      "median_time": 52.14037370681763
+    },
+    " $10^{34} \\mathrm{~m}^{-3} \\mathrm{~s}^{-1}$": {
+      "source_name": " $10^{34} \\mathrm{~m}^{-3} \\mathrm{~s}^{-1}$",
+      "total": 1,
+      "correct": 0,
+      "incorrect": 0,
+      "errors": 1,
+      "timeouts": 0,
+      "accuracy": 0.0,
+      "avg_cost": 0.0,
+      "median_cost": 0.0,
+      "avg_time": 66.28390908241272,
+      "median_time": 66.28390908241272
+    },
+    "$ \\mathrm{~m} / \\mathrm{s}$ ": {
+      "source_name": "$ \\mathrm{~m} / \\mathrm{s}$ ",
+      "total": 1,
+      "correct": 0,
+      "incorrect": 0,
+      "errors": 1,
+      "timeouts": 0,
+      "accuracy": 0.0,
+      "avg_cost": 0.036289999999999996,
+      "median_cost": 0.036289999999999996,
+      "avg_time": 63.42180609703064,
+      "median_time": 63.42180609703064
+    },
+    "$\\mathrm{J} \\mathrm{K}^{-1} \\mathrm{~mol}^{-1}$": {
+      "source_name": "$\\mathrm{J} \\mathrm{K}^{-1} \\mathrm{~mol}^{-1}$",
+      "total": 1,
+      "correct": 0,
+      "incorrect": 0,
+      "errors": 1,
+      "timeouts": 0,
+      "accuracy": 0.0,
+      "avg_cost": 0.024934,
+      "median_cost": 0.024934,
+      "avg_time": 30.36680030822754,
+      "median_time": 30.36680030822754
+    },
+    "$^\\circ$": {
+      "source_name": "$^\\circ$",
+      "total": 1,
+      "correct": 0,
+      "incorrect": 0,
+      "errors": 1,
+      "timeouts": 0,
+      "accuracy": 0.0,
+      "avg_cost": 0.024128399999999998,
+      "median_cost": 0.024128399999999998,
+      "avg_time": 48.71516227722168,
+      "median_time": 48.71516227722168
+    }
+  },
+  "error_breakdown": {
+    "UNKNOWN_ERROR": 2
+  }
+}
