@@ -36,6 +36,7 @@ class ProblemResult(BaseModel):
     error_type: Optional[str] = None
     num_steps: Optional[int] = None
     failed_at_step: Optional[int] = None
+    comparison_reason: Optional[str] = None  # Why the answer matched/didn't match
 
 
 class TimeoutError(Exception):

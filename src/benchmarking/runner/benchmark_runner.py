@@ -106,8 +106,10 @@ class BenchmarkRunner:
                     ground_truth_unit=result.ground_truth_unit,
                 )
 
-                # Update result verdict
+                # Update result verdict and comparison details
                 result.verdict = comparison.verdict
+                result.comparison_reason = comparison.reason
+
             except Exception as e:
                 # Catch comparison errors and log them
                 result.verdict = "ERROR"
@@ -121,15 +123,28 @@ class BenchmarkRunner:
             result_objs.append(result)
             completed_ids.add(problem.problem_id)
 
-            # Print progress
+            # Print progress with more detail
             correct_count = sum(1 for r in result_objs if r.verdict == "CORRECT")
             if self.config.verbose:
+                # Format predicted and ground truth for display
+                pred_display = f"{result.predicted_answer} {result.predicted_unit or ''}".strip()
+                truth_display = f"{result.ground_truth_answer} {result.ground_truth_unit}".strip()
+
                 status_msg = (
                     f"Problem {problem.problem_id}: {result.verdict} "
-                    f"(Accuracy: {correct_count}/{len(result_objs)})"
+                    f"(Accuracy: {correct_count}/{len(result_objs)})\n"
+                    f"  Predicted: {pred_display}\n"
+                    f"  Expected:  {truth_display}"
                 )
+
+                # Add detailed comparison reason
+                if result.comparison_reason:
+                    status_msg += f"\n  Reason:    {result.comparison_reason[:120]}"
+
+                # Add error details if applicable
                 if result.verdict == "ERROR" and result.error_message:
-                    status_msg += f" - {result.error_message[:60]}"
+                    status_msg += f"\n  Error: {result.error_message[:80]}"
+
                 tqdm.write(status_msg)
 
             # Save checkpoint

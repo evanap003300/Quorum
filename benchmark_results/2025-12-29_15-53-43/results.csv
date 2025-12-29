@@ -1,0 +1,8 @@
+problem_id,verdict,ground_truth_answer,ground_truth_unit,predicted_answer,predicted_unit,total_time,total_cost,error_message
+ 16.30,ERROR,8.44, $10^{34} \mathrm{~m}^{-3} \mathrm{~s}^{-1}$,6615342122.631663,s^-1,66.80,0.0373,
+12.1,ERROR,1.91, $10^{-47} \mathrm{~kg} \mathrm{~m}^2$,,,61.44,0.0000,Solver error: Multi-output step should return dicts
+ e3.7(a)(b),CORRECT,-87.8,$\mathrm{J} \mathrm{K}^{-1} \mathrm{~mol}^{-1}$,-87.79,J/(mol*K),26.01,0.0215,
+ 7.10,ERROR,48.189685,$^\circ$,0.8410686705679299,rad,56.63,0.0238,
+ Problem 9.12,ERROR,11,$ \mathrm{~m} / \mathrm{s}$ ,,,76.99,0.0340,"Step 2 failed: Failed to extract: ['m_tank_empty', 'm_astro', 'm_after_gas']. Output:
+{'m_tank_empty': '8.0 kg', 'm_astro': '90.0 kg', 'm_after_gas': '98.0 kg'}
+"

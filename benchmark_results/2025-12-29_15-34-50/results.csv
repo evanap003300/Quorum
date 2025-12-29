@@ -1,0 +1,6 @@
+problem_id,verdict,ground_truth_answer,ground_truth_unit,predicted_answer,predicted_unit,total_time,total_cost,error_message
+ 16.30,ERROR,8.44, $10^{34} \mathrm{~m}^{-3} \mathrm{~s}^{-1}$,6615162212.676407,1/s,61.56,0.0344,
+12.1,ERROR,1.91, $10^{-47} \mathrm{~kg} \mathrm{~m}^2$,2.0925830777349414e-27,kg*m^2,76.10,0.0305,
+ e3.7(a)(b),ERROR,-87.8,$\mathrm{J} \mathrm{K}^{-1} \mathrm{~mol}^{-1}$,-87.79264214046823,J/(mol*K),30.73,0.0251,
+ 7.10,ERROR,48.189685,$^\circ$,0.8410686705679299,rad,63.95,0.0231,
+ Problem 9.12,ERROR,11,$ \mathrm{~m} / \mathrm{s}$ ,12.001683536038648,m/s,76.83,0.0383,

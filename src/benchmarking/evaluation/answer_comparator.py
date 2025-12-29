@@ -56,7 +56,11 @@ class AnswerComparator:
 
             # Check for parsing failures
             if pred_value is None or truth_value is None:
-                reason = "Failed to parse answer as numeric value"
+                reason = (
+                    f"Failed to parse answers as numeric values. "
+                    f"Predicted: {predicted} ({predicted_unit}), "
+                    f"Ground truth: {ground_truth} ({ground_truth_unit})"
+                )
                 return ComparisonResult(
                     verdict="ERROR",
                     confidence=0.0,
@@ -67,12 +71,26 @@ class AnswerComparator:
 
             # Handle unit conversion
             if predicted_unit != ground_truth_unit and self.allow_unit_conversion:
-                converted_pred = self.unit_converter.normalize(
-                    pred_value, predicted_unit, ground_truth_unit
-                )
-                if converted_pred is None:
-                    # Conversion failed - try reverse
-                    reason = f"Could not convert {predicted_unit} to {ground_truth_unit}"
+                try:
+                    converted_pred = self.unit_converter.normalize(
+                        pred_value, predicted_unit, ground_truth_unit
+                    )
+                    if converted_pred is None:
+                        reason = (
+                            f"Unit conversion failed: could not convert "
+                            f"{pred_value} {predicted_unit} to {ground_truth_unit}. "
+                            f"Ground truth: {truth_value} {ground_truth_unit}"
+                        )
+                        return ComparisonResult(
+                            verdict="ERROR",
+                            confidence=0.0,
+                            reason=reason,
+                            predicted_value=pred_value,
+                            ground_truth_value=truth_value,
+                        )
+                    pred_value = converted_pred
+                except Exception as e:
+                    reason = f"Unit conversion error: {str(e)}"
                     return ComparisonResult(
                         verdict="ERROR",
                         confidence=0.0,
@@ -80,13 +98,16 @@ class AnswerComparator:
                         predicted_value=pred_value,
                         ground_truth_value=truth_value,
                     )
-                pred_value = converted_pred
 
             # Numeric comparison with tolerance
             is_correct, relative_error = self._numeric_compare(pred_value, truth_value)
 
             if is_correct:
-                reason = f"Numeric match within {self.tolerance*100:.1f}% tolerance (error: {relative_error*100:.2f}%)"
+                reason = (
+                    f"✓ CORRECT: Numeric match within {self.tolerance*100:.1f}% tolerance. "
+                    f"Predicted: {pred_value:.6e}, Ground truth: {truth_value:.6e}, "
+                    f"Error: {relative_error*100:.4f}%"
+                )
                 return ComparisonResult(
                     verdict="CORRECT",
                     confidence=1.0 - min(relative_error / self.tolerance, 1.0),  # Confidence based on error
@@ -96,7 +117,11 @@ class AnswerComparator:
                     relative_error=relative_error,
                 )
             else:
-                reason = f"Numeric mismatch: {relative_error*100:.2f}% error (tolerance: {self.tolerance*100:.1f}%)"
+                reason = (
+                    f"✗ INCORRECT: Numeric mismatch. "
+                    f"Predicted: {pred_value:.6e}, Ground truth: {truth_value:.6e}, "
+                    f"Error: {relative_error*100:.4f}% (tolerance: {self.tolerance*100:.1f}%)"
+                )
                 return ComparisonResult(
                     verdict="INCORRECT",
                     confidence=0.0,
