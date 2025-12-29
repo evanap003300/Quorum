@@ -27,6 +27,11 @@ def parse_latex_unit(latex_unit: str) -> str:
     unit = unit.strip()
     unit = unit.replace('~', '')
 
+    # Handle special degree symbol patterns FIRST (before processing exponents)
+    # This handles $^\circ$ or $^ \circ$ -> degree
+    unit = re.sub(r'\^\s*\\circ', 'degree', unit)
+    unit = re.sub(r'\^\s*°', 'degree', unit)
+
     # Replace \mathrm{X} with X
     unit = re.sub(r'\\mathrm\{([^}]+)\}', r'\1', unit)
 

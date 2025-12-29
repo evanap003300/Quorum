@@ -1,0 +1,98 @@
+{
+  "total_problems": 5,
+  "correct": 2,
+  "incorrect": 0,
+  "errors": 3,
+  "timeouts": 0,
+  "accuracy": 0.4,
+  "total_time": 305.86778020858765,
+  "avg_time_per_problem": 61.17355604171753,
+  "median_time_per_problem": 65.03063607215881,
+  "time_percentiles": {
+    "p50": 65.03063607215881,
+    "p75": 71.85016393661499,
+    "p90": 77.1568898677826,
+    "p95": 78.92579851150512,
+    "p99": 80.34092542648315
+  },
+  "total_cost": 0.1240052,
+  "avg_cost_per_problem": 0.0310013,
+  "median_cost_per_problem": 0.0309546,
+  "cost_percentiles": {
+    "p50": 0.0309546,
+    "p75": 0.037133,
+    "p90": 0.03752648,
+    "p95": 0.03765764,
+    "p99": 0.037762567999999996
+  },
+  "by_source": {
+    " $10^{-47} \\mathrm{~kg} \\mathrm{~m}^2$": {
+      "source_name": " $10^{-47} \\mathrm{~kg} \\mathrm{~m}^2$",
+      "total": 1,
+      "correct": 0,
+      "incorrect": 0,
+      "errors": 1,
+      "timeouts": 0,
+      "accuracy": 0.0,
+      "avg_cost": 0.0,
+      "median_cost": 0.0,
+      "avg_time": 53.350768089294434,
+      "median_time": 53.350768089294434
+    },
+    " $10^{34} \\mathrm{~m}^{-3} \\mathrm{~s}^{-1}$": {
+      "source_name": " $10^{34} \\mathrm{~m}^{-3} \\mathrm{~s}^{-1}$",
+      "total": 1,
+      "correct": 0,
+      "incorrect": 0,
+      "errors": 1,
+      "timeouts": 0,
+      "accuracy": 0.0,
+      "avg_cost": 0.0369144,
+      "median_cost": 0.0369144,
+      "avg_time": 80.69470715522766,
+      "median_time": 80.69470715522766
+    },
+    "$ \\mathrm{~m} / \\mathrm{s}$ ": {
+      "source_name": "$ \\mathrm{~m} / \\mathrm{s}$ ",
+      "total": 1,
+      "correct": 0,
+      "incorrect": 0,
+      "errors": 1,
+      "timeouts": 0,
+      "accuracy": 0.0,
+      "avg_cost": 0.0377888,
+      "median_cost": 0.0377888,
+      "avg_time": 71.85016393661499,
+      "median_time": 71.85016393661499
+    },
+    "$\\mathrm{J} \\mathrm{K}^{-1} \\mathrm{~mol}^{-1}$": {
+      "source_name": "$\\mathrm{J} \\mathrm{K}^{-1} \\mathrm{~mol}^{-1}$",
+      "total": 1,
+      "correct": 1,
+      "incorrect": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "accuracy": 1.0,
+      "avg_cost": 0.0243072,
+      "median_cost": 0.0243072,
+      "avg_time": 34.94150495529175,
+      "median_time": 34.94150495529175
+    },
+    "$^\\circ$": {
+      "source_name": "$^\\circ$",
+      "total": 1,
+      "correct": 1,
+      "incorrect": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "accuracy": 1.0,
+      "avg_cost": 0.024994799999999998,
+      "median_cost": 0.024994799999999998,
+      "avg_time": 65.03063607215881,
+      "median_time": 65.03063607215881
+    }
+  },
+  "error_breakdown": {
+    "UNKNOWN_ERROR": 2
+  }
+}
