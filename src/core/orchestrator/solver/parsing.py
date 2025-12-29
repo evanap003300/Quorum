@@ -33,13 +33,20 @@ def calculate_cost(completion, model: str) -> float:
 def extract_result_from_text(text: str) -> Optional[str]:
     """
     Extract a result from plain text response.
-    Looks for patterns like "M kg", "10.0 m/s", etc.
+    Looks for patterns like "M kg", "10.0 m/s", JSON objects, etc.
     Assumes the first meaningful line or last line contains the result.
 
     Returns:
         Extracted result string, or None if no result found
     """
     lines = text.strip().split('\n')
+
+    # First, look for JSON objects (for multi-output calculations)
+    for line in lines:
+        line = line.strip()
+        if line.startswith('{') and line.endswith('}'):
+            # This looks like a JSON object
+            return line
 
     # Try to find a line that looks like "value unit"
     for line in lines:
@@ -167,6 +174,62 @@ def validate_result(value: Union[float, str], unit: str, step: Step, state: Stat
     # A value that matches variable name might be intentional (symbolic/given as name)
 
     return True, None
+
+
+def parse_json_output(output: str) -> Tuple[dict, dict]:
+    """
+    Parse JSON output from multi-output calculations.
+
+    Expected format:
+    {"var1": "10.0 m/s", "var2": "20.0 kg", ...}
+
+    Returns:
+        Tuple of (values_dict, units_dict)
+        - values_dict: {var_name: value, ...} where value is float or str
+        - units_dict: {var_name: unit, ...}
+
+    Raises:
+        ValueError: If output is not valid JSON
+    """
+    import json
+
+    output = output.strip()
+
+    # Parse JSON
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Output is not valid JSON: {str(e)}")
+
+    if not isinstance(data, dict):
+        raise ValueError(f"JSON output must be an object, got {type(data).__name__}")
+
+    values_dict = {}
+    units_dict = {}
+
+    for var_name, value_str in data.items():
+        # Parse "value unit" format from each entry
+        value_str = str(value_str).strip()
+
+        # Split on last space to separate value and unit
+        parts = value_str.rsplit(None, 1)
+
+        if len(parts) == 2:
+            value_text, unit = parts
+        else:
+            value_text = parts[0] if parts else ""
+            unit = "dimensionless"
+
+        # Try to parse value as float, otherwise treat as symbolic
+        try:
+            value = float(value_text)
+        except ValueError:
+            value = value_text
+
+        values_dict[var_name] = value
+        units_dict[var_name] = unit
+
+    return values_dict, units_dict
 
 
 def parse_multi_output(output: str, var_names: List[str]) -> Tuple[dict, dict]:

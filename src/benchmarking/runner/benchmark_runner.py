@@ -98,15 +98,25 @@ class BenchmarkRunner:
             result = self.executor.execute(problem)
 
             # Compare answer
-            comparison = self.comparator.compare(
-                predicted=result.predicted_answer,
-                predicted_unit=result.predicted_unit or "",
-                ground_truth=result.ground_truth_answer,
-                ground_truth_unit=result.ground_truth_unit,
-            )
+            try:
+                comparison = self.comparator.compare(
+                    predicted=result.predicted_answer,
+                    predicted_unit=result.predicted_unit or "",
+                    ground_truth=result.ground_truth_answer,
+                    ground_truth_unit=result.ground_truth_unit,
+                )
 
-            # Update result verdict
-            result.verdict = comparison.verdict
+                # Update result verdict
+                result.verdict = comparison.verdict
+            except Exception as e:
+                # Catch comparison errors and log them
+                result.verdict = "ERROR"
+                if result.error_message:
+                    result.error_message += f" [Comparison error: {str(e)[:100]}]"
+                else:
+                    result.error_message = f"Answer comparison failed: {str(e)[:100]}"
+                if self.config.verbose:
+                    tqdm.write(f"  WARNING: Comparison error for {problem.problem_id}: {str(e)[:80]}")
 
             result_objs.append(result)
             completed_ids.add(problem.problem_id)

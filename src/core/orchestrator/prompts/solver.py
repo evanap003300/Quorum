@@ -104,6 +104,54 @@ def build_calculate_prompt(step: Step, state: StateObject) -> str:
         var = state.variables[input_var]
         inputs_text += f"{input_var} = {var.value} {var.unit}\n"
 
+    outputs = step.get_outputs()
+
+    # Handle multi-output calculations
+    if len(outputs) > 1:
+        outputs_section = ""
+        for var_name in outputs:
+            var = state.variables[var_name]
+            unit = step.get_unit(var_name)
+            outputs_section += f"  - {var_name}: {var.description} (unit: {unit})\n"
+
+        base_prompt = f"""Calculate {step.description}:
+
+Inputs:
+{inputs_text}
+
+Formula: {step.formula}
+
+CALCULATE ALL {len(outputs)} OUTPUTS:
+{outputs_section}
+
+CRITICAL: You must output ALL {len(outputs)} variables as a JSON object.
+Print the result EXACTLY like this (all on one line):
+{{"var1": "value1 unit1", "var2": "value2 unit2", ...}}
+
+EXAMPLE (for two masses):
+{{"m_empty": "8.0 kg", "m_after": "98.0 kg"}}
+
+RULES:
+- Use double quotes (") for JSON keys and values
+- Include units with each value
+- Use scientific notation for very large/small numbers
+- All output on a single line
+- Use sci_constants for physical constants"""
+
+        if step.is_symbolic:
+            symbolic_section = f"""
+
+SYMBOLIC CALCULATION:
+- Define symbolic variables: sp.symbols('L V u ...', positive=True, real=True)
+- Apply formula and simplify: sp.simplify(result)
+- CRITICAL: Preserve units! Each result must have appropriate units
+- Print JSON with symbolic expressions: {{"var1": "expr1 unit1", ...}}
+"""
+            return base_prompt + symbolic_section
+        else:
+            return base_prompt
+
+    # Single variable calculation (original logic)
     base_prompt = f"""Calculate {step.description}:
 
 Inputs:

@@ -26,6 +26,7 @@ from solver.parsing import (
     extract_result_from_text,
     parse_output,
     parse_multi_output,
+    parse_json_output,
 )
 
 try:
@@ -293,8 +294,30 @@ def execute_with_llm_multi_output(prompt: str, outputs: List[str], step: Step, s
     if not output:
         raise ValueError("No output generated from code execution")
 
-    # Parse output: expect multiple lines of "var_name value unit" format
-    values_dict, units_dict = parse_multi_output(output, outputs)
+    # Parse output: try JSON first, then fall back to multi-line format
+    values_dict = None
+    units_dict = None
+    parse_error = None
+
+    # Try JSON parsing first (for new multi-output calculations)
+    if output.strip().startswith('{') and output.strip().endswith('}'):
+        try:
+            values_dict, units_dict = parse_json_output(output)
+        except Exception as e:
+            parse_error = f"JSON parsing failed: {str(e)}"
+
+    # Fall back to multi-line parsing if JSON failed or wasn't JSON
+    if values_dict is None:
+        try:
+            values_dict, units_dict = parse_multi_output(output, outputs)
+        except Exception as e:
+            if parse_error:
+                parse_error += f"; Multi-line parsing also failed: {str(e)}"
+            else:
+                parse_error = f"Multi-line parsing failed: {str(e)}"
+
+    if values_dict is None:
+        raise ValueError(f"Could not parse output. {parse_error}\nRaw output:\n{output}")
 
     # Validate that all expected variables were parsed
     missing_vars = [v for v in outputs if values_dict.get(v) is None]

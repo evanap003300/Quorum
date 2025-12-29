@@ -1,0 +1,8 @@
+problem_id,verdict,ground_truth_answer,ground_truth_unit,predicted_answer,predicted_unit,total_time,total_cost,error_message
+ 16.30,ERROR,8.44, $10^{34} \mathrm{~m}^{-3} \mathrm{~s}^{-1}$,Cannot,calculate collisional frequency: d_CO2 (diameter of CO2 molecule) is not provided.,60.69,0.0320,
+12.1,ERROR,1.91, $10^{-47} \mathrm{~kg} \mathrm{~m}^2$,1.9164898956020932e-47,kg*m^2,50.80,0.0285,
+ e3.7(a)(b),ERROR,-87.8,$\mathrm{J} \mathrm{K}^{-1} \mathrm{~mol}^{-1}$,-87.79264214046823,J/(mol*K),28.19,0.0246,
+ 7.10,ERROR,48.189685,$^\circ$,,,55.48,0.0233,"Step 1 failed: Failed to extract: ['m', 'a', 'g']. Output:
+Error: unexpected indent (<string>, line 7)"
+ Problem 9.12,ERROR,11,$ \mathrm{~m} / \mathrm{s}$ ,,,66.96,0.0372,"Step 2 failed: Failed to extract: ['m_shell', 'm_astro', 'm_post_gas']. Output:
+Error: unterminated string literal (detected at line 12) (<string>, line 12)"
