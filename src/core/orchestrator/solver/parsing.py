@@ -183,6 +183,8 @@ def parse_json_output(output: str) -> Tuple[dict, dict]:
     Expected format:
     {"var1": "10.0 m/s", "var2": "20.0 kg", ...}
 
+    Also handles Python dict format (single quotes) as fallback.
+
     Returns:
         Tuple of (values_dict, units_dict)
         - values_dict: {var_name: value, ...} where value is float or str
@@ -199,7 +201,13 @@ def parse_json_output(output: str) -> Tuple[dict, dict]:
     try:
         data = json.loads(output)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Output is not valid JSON: {str(e)}")
+        # Fallback: try to convert Python dict format (single quotes) to JSON (double quotes)
+        try:
+            # Replace single quotes with double quotes for Python dict -> JSON conversion
+            json_str = output.replace("'", '"')
+            data = json.loads(json_str)
+        except json.JSONDecodeError:
+            raise ValueError(f"Output is not valid JSON: {str(e)}")
 
     if not isinstance(data, dict):
         raise ValueError(f"JSON output must be an object, got {type(data).__name__}")

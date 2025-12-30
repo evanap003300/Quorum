@@ -41,36 +41,37 @@ def build_extract_prompt(step: Step, state: StateObject) -> str:
 PROBLEM STATEMENT:
 {state.problem_text}
 
-WRITE PYTHON CODE that:
-1. Reads the problem above carefully
-2. For EACH variable, find its ACTUAL VALUE in the problem text (not the variable name)
-3. Use the LOCATION hint if provided to find the exact value
-4. PRINTS each variable on a separate line in EXACTLY this format:
+PYTHON CODE TEMPLATE:
+```python
+# Extract each variable and print in VAR_NAME VALUE UNIT format
+# Use regex or text parsing to find values from problem statement
 
-   VAR_NAME VALUE UNIT
+print("{outputs[0]} VALUE1 UNIT1")
+print("{outputs[1]} VALUE2 UNIT2")
+# ... (one print per variable, all on separate lines)
+```
 
 CRITICAL RULES:
-✗ DO NOT use the variable name as the VALUE (e.g., "T_ref T_ref C" is WRONG)
-✓ DO extract the actual number from the problem (e.g., "T_ref 72 C" is correct)
+1. Extract ACTUAL VALUES from the problem text, not variable names
+2. Print each variable on its own line
+3. Format: VAR_NAME VALUE UNIT (space-separated)
+4. Extract ALL {len(outputs)} variables: {", ".join(outputs)}
+5. Do NOT print explanations, only variable lines
 
-You must extract ALL {len(outputs)} variables: {", ".join(outputs)}
+EXAMPLES:
+P 1.0 atm
+T 298.0 K
 
-OUTPUT EXAMPLES (for numeric values from a table):
-T_ref 72 C
-T_x_plus 74 C
-T_x_minus 70 C
+OR:
 
-OUTPUT EXAMPLES (for values directly stated in text):
-m 5.0 kg
-g 9.81 m/s**2
+theta_deg 104.5 degree
+d_pm 95.7 pm
 
-RULES:
-- Extract NUMERIC VALUES from tables, grids, or stated values
-- Use LOCATION hints to find the correct row/column in tables
-- For symbolic variables, use the variable name as the VALUE
-- Print EVERY variable, even if they appear later in the problem
-- Each variable must be on its own line
-- NO variable should have its name as both VAR_NAME and VALUE"""
+IMPORTANT:
+- Use LOCATION hints if provided to find exact values
+- For symbolic variables, the VALUE is the symbol name itself
+- Every variable must produce exactly one line of output
+- Output format is critical: VAR_NAME VALUE UNIT"""
 
         if step.is_symbolic:
             symbolic_section = f"""
@@ -136,19 +137,41 @@ Formula: {step.formula}
 CALCULATE ALL {len(outputs)} OUTPUTS:
 {outputs_section}
 
-CRITICAL: You must output ALL {len(outputs)} variables as a JSON object.
-Print the result EXACTLY like this (all on one line):
-{{"var1": "value1 unit1", "var2": "value2 unit2", ...}}
+CRITICAL: Output VALID JSON using json.dumps() - NOT Python dict notation.
 
-EXAMPLE (for two masses):
-{{"m_empty": "8.0 kg", "m_after": "98.0 kg"}}
+PYTHON CODE TEMPLATE:
+```python
+import json
+from scipy import constants as sci_constants
+
+# Your calculation code here
+result = {{
+    "var1": "value1 unit1",
+    "var2": "value2 unit2"
+}}
+print(json.dumps(result))
+```
+
+INSTRUCTIONS:
+1. Define a Python dict with all {len(outputs)} outputs
+2. Each value must be formatted as "number unit" (include unit with value)
+3. Use json.dumps(result) to convert to valid JSON
+4. Print ONLY the JSON output (one line)
+
+EXAMPLE:
+result = {{
+    "m_empty": "8.0 kg",
+    "m_after": "98.0 kg"
+}}
+print(json.dumps(result))
 
 RULES:
-- Use double quotes (") for JSON keys and values
-- Include units with each value
+- Define result as a dict with string values
+- Use json.dumps() to ensure valid JSON output
+- Each value includes: number + space + unit
 - Use scientific notation for very large/small numbers
-- All output on a single line
-- Use sci_constants for physical constants"""
+- Use sci_constants for physical constants
+- Do NOT print variable assignments, only the JSON result"""
 
         if step.is_symbolic:
             symbolic_section = f"""
