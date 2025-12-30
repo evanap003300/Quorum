@@ -5,6 +5,34 @@ from typing import Union, Optional
 from .unit_converter import UnitConverter
 import math
 
+try:
+    import sympy
+    SYMPY_AVAILABLE = True
+except ImportError:
+    SYMPY_AVAILABLE = False
+
+
+def evaluate_symbolic_expression(expr_str: str) -> Optional[float]:
+    """Try to evaluate a symbolic expression to a numeric value.
+
+    Args:
+        expr_str: String representation of expression (e.g., "acos(2/3)")
+
+    Returns:
+        Numeric value if evaluation succeeds, None otherwise
+    """
+    if not SYMPY_AVAILABLE:
+        return None
+
+    try:
+        # Parse and evaluate the expression
+        expr = sympy.sympify(expr_str)
+        # Evaluate to a floating point number
+        result = float(expr.evalf())
+        return result
+    except Exception:
+        return None
+
 
 class ComparisonResult(BaseModel):
     """Result of comparing predicted vs ground truth answer."""
@@ -168,6 +196,11 @@ class AnswerComparator:
                     return float(parts[0])
                 except ValueError:
                     pass
+
+            # Try to evaluate as symbolic expression (e.g., "acos(2/3)")
+            symbolic_result = evaluate_symbolic_expression(text)
+            if symbolic_result is not None:
+                return symbolic_result
 
         return None
 

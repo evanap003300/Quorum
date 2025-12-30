@@ -1,0 +1,98 @@
+{
+  "total_problems": 5,
+  "correct": 1,
+  "incorrect": 1,
+  "errors": 3,
+  "timeouts": 0,
+  "accuracy": 0.2,
+  "total_time": 429.2536361217499,
+  "avg_time_per_problem": 85.85072722434998,
+  "median_time_per_problem": 66.64990401268005,
+  "time_percentiles": {
+    "p50": 66.64990401268005,
+    "p75": 129.79152417182922,
+    "p90": 130.3919511795044,
+    "p95": 130.59209351539613,
+    "p99": 130.7522073841095
+  },
+  "total_cost": 0.12645,
+  "avg_cost_per_problem": 0.0316125,
+  "median_cost_per_problem": 0.0296328,
+  "cost_percentiles": {
+    "p50": 0.0296328,
+    "p75": 0.0333477,
+    "p90": 0.03714876,
+    "p95": 0.038415780000000004,
+    "p99": 0.039429396000000005
+  },
+  "by_source": {
+    " $10^{-47} \\mathrm{~kg} \\mathrm{~m}^2$": {
+      "source_name": " $10^{-47} \\mathrm{~kg} \\mathrm{~m}^2$",
+      "total": 1,
+      "correct": 0,
+      "incorrect": 0,
+      "errors": 1,
+      "timeouts": 0,
+      "accuracy": 0.0,
+      "avg_cost": 0.031236,
+      "median_cost": 0.031236,
+      "avg_time": 66.64990401268005,
+      "median_time": 66.64990401268005
+    },
+    " $10^{34} \\mathrm{~m}^{-3} \\mathrm{~s}^{-1}$": {
+      "source_name": " $10^{34} \\mathrm{~m}^{-3} \\mathrm{~s}^{-1}$",
+      "total": 1,
+      "correct": 0,
+      "incorrect": 0,
+      "errors": 1,
+      "timeouts": 0,
+      "accuracy": 0.0,
+      "avg_cost": 0.0,
+      "median_cost": 0.0,
+      "avg_time": 130.79223585128784,
+      "median_time": 130.79223585128784
+    },
+    "$ \\mathrm{~m} / \\mathrm{s}$ ": {
+      "source_name": "$ \\mathrm{~m} / \\mathrm{s}$ ",
+      "total": 1,
+      "correct": 0,
+      "incorrect": 1,
+      "errors": 0,
+      "timeouts": 0,
+      "accuracy": 0.0,
+      "avg_cost": 0.039682800000000004,
+      "median_cost": 0.039682800000000004,
+      "avg_time": 129.79152417182922,
+      "median_time": 129.79152417182922
+    },
+    "$\\mathrm{J} \\mathrm{K}^{-1} \\mathrm{~mol}^{-1}$": {
+      "source_name": "$\\mathrm{J} \\mathrm{K}^{-1} \\mathrm{~mol}^{-1}$",
+      "total": 1,
+      "correct": 1,
+      "incorrect": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "accuracy": 1.0,
+      "avg_cost": 0.028029600000000002,
+      "median_cost": 0.028029600000000002,
+      "avg_time": 35.768590211868286,
+      "median_time": 35.768590211868286
+    },
+    "$^\\circ$": {
+      "source_name": "$^\\circ$",
+      "total": 1,
+      "correct": 0,
+      "incorrect": 0,
+      "errors": 1,
+      "timeouts": 0,
+      "accuracy": 0.0,
+      "avg_cost": 0.027501599999999998,
+      "median_cost": 0.027501599999999998,
+      "avg_time": 66.25138187408447,
+      "median_time": 66.25138187408447
+    }
+  },
+  "error_breakdown": {
+    "UNKNOWN_ERROR": 2
+  }
+}

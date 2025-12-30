@@ -1,0 +1,7 @@
+problem_id,verdict,ground_truth_answer,ground_truth_unit,predicted_answer,predicted_unit,total_time,total_cost,error_message
+ 16.30,ERROR,8.44, $10^{34} \mathrm{~m}^{-3} \mathrm{~s}^{-1}$,,,130.79,0.0000,Solver error: Multi-output step should return dicts
+12.1,ERROR,1.91, $10^{-47} \mathrm{~kg} \mathrm{~m}^2$,,,66.65,0.0312,"Step 1 failed: Failed to extract: ['theta_deg', 'd_pm']. Output:
+Error: unexpected indent (<string>, line 5)"
+ e3.7(a)(b),CORRECT,-87.8,$\mathrm{J} \mathrm{K}^{-1} \mathrm{~mol}^{-1}$,-87.79264214046823,J/(mol*K),35.77,0.0280,
+ 7.10,ERROR,48.189685,$^\circ$,acos(2/3),rad,66.25,0.0275,
+ Problem 9.12,INCORRECT,11,$ \mathrm{~m} / \mathrm{s}$ ,12.001683536038648,m/s,129.79,0.0397,

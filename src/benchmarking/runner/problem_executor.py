@@ -8,10 +8,43 @@ from contextlib import contextmanager
 import sys
 import os
 
+try:
+    import sympy
+    SYMPY_AVAILABLE = True
+except ImportError:
+    SYMPY_AVAILABLE = False
+
 # Add orchestrator to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../core/orchestrator'))
 
 from src.benchmarking.dataset.scibench_loader import BenchmarkProblem
+
+
+def evaluate_symbolic_answer(answer: Union[float, str]) -> Union[float, str]:
+    """Try to evaluate a symbolic expression to a numeric value.
+
+    Args:
+        answer: Numeric or string answer
+
+    Returns:
+        Numeric value if it's a symbolic expression that can be evaluated,
+        otherwise returns the original answer
+    """
+    if not isinstance(answer, str):
+        return answer
+
+    if not SYMPY_AVAILABLE:
+        return answer
+
+    try:
+        # Parse and evaluate the expression
+        expr = sympy.sympify(answer.strip())
+        # Evaluate to a floating point number
+        result = float(expr.evalf())
+        return result
+    except Exception:
+        # If evaluation fails, return original answer
+        return answer
 
 
 class ProblemResult(BaseModel):
@@ -117,7 +150,7 @@ class ProblemExecutor:
                 return ProblemResult(
                     problem_id=problem.problem_id,
                     success=True,
-                    predicted_answer=result.get("final_answer"),
+                    predicted_answer=evaluate_symbolic_answer(result.get("final_answer")),
                     predicted_unit=result.get("final_unit", ""),
                     ground_truth_answer=problem.ground_truth_answer,
                     ground_truth_unit=problem.ground_truth_unit,
@@ -150,7 +183,7 @@ class ProblemExecutor:
                 return ProblemResult(
                     problem_id=problem.problem_id,
                     success=False,
-                    predicted_answer=result.get("final_answer"),
+                    predicted_answer=evaluate_symbolic_answer(result.get("final_answer")),
                     predicted_unit=result.get("final_unit"),
                     ground_truth_answer=problem.ground_truth_answer,
                     ground_truth_unit=problem.ground_truth_unit,

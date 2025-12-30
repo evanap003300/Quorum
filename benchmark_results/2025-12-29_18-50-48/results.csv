@@ -1,0 +1,6 @@
+problem_id,verdict,ground_truth_answer,ground_truth_unit,predicted_answer,predicted_unit,total_time,total_cost,error_message
+ 16.30,ERROR,8.44, $10^{34} \mathrm{~m}^{-3} \mathrm{~s}^{-1}$,6301344326.762406,s^-1,103.87,0.0388,
+12.1,ERROR,1.91, $10^{-47} \mathrm{~kg} \mathrm{~m}^2$,,,85.63,0.0000,Solver error: Multi-output step should return dicts
+ e3.7(a)(b),CORRECT,-87.8,$\mathrm{J} \mathrm{K}^{-1} \mathrm{~mol}^{-1}$,-87.7926,J/(mol*K),43.17,0.0275,
+ 7.10,CORRECT,48.189685,$^\circ$,0.8410686705679302,rad,79.50,0.0271,
+ Problem 9.12,INCORRECT,11,$ \mathrm{~m} / \mathrm{s}$ ,-9.001683536038648,m/s,122.67,0.0395,
