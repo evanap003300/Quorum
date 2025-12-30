@@ -28,6 +28,10 @@ except ImportError:
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'orchestrator'))
 from tools.evaluation.code_interpreter import run as run_python_impl
 
+# Import centralized pricing config
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'orchestrator', 'config'))
+from pricing import MODEL_PRICING
+
 load_dotenv()
 
 # Configure Gemini client
@@ -226,10 +230,14 @@ async def run_python(code: str, sandbox: Optional["Sandbox"] = None) -> str:
 
 
 def _calculate_cost(
-    input_tokens: int, output_tokens: int
+    input_tokens: int, output_tokens: int, model: str = "gemini-3-pro-preview"
 ) -> float:
-    """Calculate cost for API call."""
-    return (input_tokens * PRICING["input"]) + (output_tokens * PRICING["output"])
+    """Calculate cost for API call using centralized pricing."""
+    if model not in MODEL_PRICING:
+        return 0.0
+
+    pricing = MODEL_PRICING[model]
+    return ((input_tokens * pricing["input"]) + (output_tokens * pricing["output"])) / 1_000_000
 
 
 def _extract_answer(response: str) -> Tuple[Union[float, str], str]:
@@ -268,6 +276,7 @@ def _run_agent_loop(
     problem: str,
     sandbox: Optional["Sandbox"] = None,
     max_iterations: int = 7,
+    model: str = "gemini-3-pro-preview",
 ) -> Tuple[str, List[str], float]:
     """Run agent conversation loop with tool calling.
 
@@ -275,12 +284,13 @@ def _run_agent_loop(
         problem: Problem text to solve
         sandbox: Optional existing sandbox for code execution
         max_iterations: Maximum number of tool calls allowed
+        model: Model name to use (default: gemini-3-pro-preview)
 
     Returns:
         Tuple of (final_response, code_list, total_cost)
     """
     # Initialize Gemini client
-    model_name = "gemini-3-pro-preview"
+    model_name = model
 
     # Create GenerativeModel with tools
     from google.generativeai.types import FunctionDeclaration, Tool
@@ -328,7 +338,8 @@ def _run_agent_loop(
             if hasattr(response, 'usage_metadata'):
                 total_cost += _calculate_cost(
                     response.usage_metadata.prompt_token_count,
-                    response.usage_metadata.candidates_token_count
+                    response.usage_metadata.candidates_token_count,
+                    model_name
                 )
 
             # Check if model used a tool
@@ -373,6 +384,7 @@ def solve_problem(
     max_iterations: int = 7,
     timeout: int = 120,
     sandbox: Optional["Sandbox"] = None,
+    model: str = "gemini-3-pro-preview",
 ) -> Dict[str, Any]:
     """Solve a physics/math problem using single-agent Gemini approach.
 
@@ -381,6 +393,7 @@ def solve_problem(
         max_iterations: Maximum number of tool calls allowed (default 7)
         timeout: Timeout in seconds (currently unused, for API compatibility)
         sandbox: Optional pre-initialized sandbox for code execution
+        model: Model name to use (default: gemini-3-pro-preview)
 
     Returns:
         Result dict with keys:
@@ -429,6 +442,7 @@ def solve_problem(
             problem,
             sandbox=sandbox,
             max_iterations=max_iterations,
+            model=model,
         )
 
         # Extract answer

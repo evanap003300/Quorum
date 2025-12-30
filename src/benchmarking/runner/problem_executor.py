@@ -72,6 +72,12 @@ class ProblemResult(BaseModel):
     failed_at_step: Optional[int] = None
     comparison_reason: Optional[str] = None  # Why the answer matched/didn't match
 
+    # Routing metadata
+    routing_tier: Optional[str] = None  # "EASY", "MEDIUM", "HARD"
+    routing_confidence: Optional[float] = None  # Confidence in routing classification (0-1)
+    routing_cost: Optional[float] = None  # Cost of router classification
+    routing_reasoning: Optional[str] = None  # Why this tier was selected
+
 
 class TimeoutError(Exception):
     """Raised when problem execution exceeds timeout."""
@@ -165,6 +171,10 @@ class ProblemExecutor:
                     error_message=None,
                     num_steps=num_steps,
                     failed_at_step=result.get("failed_at_step"),
+                    routing_tier=result.get("routing_tier"),
+                    routing_confidence=result.get("routing_confidence"),
+                    routing_cost=result.get("routing_cost"),
+                    routing_reasoning=result.get("routing_reasoning"),
                 )
             else:
                 # Extract plan steps safely - handle both dict and Plan object
@@ -199,6 +209,10 @@ class ProblemExecutor:
                     error_type=self._categorize_error(result.get("error", "")),
                     num_steps=num_steps,
                     failed_at_step=result.get("failed_at_step"),
+                    routing_tier=result.get("routing_tier"),
+                    routing_confidence=result.get("routing_confidence"),
+                    routing_cost=result.get("routing_cost"),
+                    routing_reasoning=result.get("routing_reasoning"),
                 )
 
         except TimeoutError as e:
@@ -234,57 +248,151 @@ class ProblemExecutor:
             )
 
     async def _execute_with_timeout(self, problem_text: str) -> dict:
-        """Execute solve_problem with timeout handling (async).
+        """Execute solve_problem with routing and timeout handling (async).
 
         Args:
             problem_text: Problem text to solve
 
         Returns:
-            Result dictionary from solve_problem
+            Result dictionary from solve_problem with routing metadata
         """
-        # Check environment variable to choose solver
-        use_single_agent = os.getenv("USE_SINGLE_AGENT", "false").lower() == "true"
+        # Check if routing is enabled (default: true)
+        use_routing = os.getenv("USE_ROUTING", "true").lower() == "true"
 
-        if use_single_agent:
-            # Import single-agent solver
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../core'))
-            from single_agent.solver import solve_problem
-        else:
-            # Import multi-agent solver (default)
-            from orchestrate import solve_problem
+        if not use_routing:
+            # LEGACY BEHAVIOR: Use USE_SINGLE_AGENT env var
+            use_single_agent = os.getenv("USE_SINGLE_AGENT", "false").lower() == "true"
 
-        # On Unix systems, use signal.alarm for timeout
-        if sys.platform != "win32":
-            try:
-                with time_limit(self.timeout_seconds):
-                    result = await solve_problem(problem_text)
+            if use_single_agent:
+                # Import single-agent solver
+                sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../core'))
+                from single_agent.solver import solve_problem
+            else:
+                # Import multi-agent solver (default)
+                from orchestrate import solve_problem
+
+            # Execute with timeout
+            if sys.platform != "win32":
+                try:
+                    with time_limit(self.timeout_seconds):
+                        if use_single_agent:
+                            result = solve_problem(problem_text)
+                        else:
+                            result = await solve_problem(problem_text)
+                        return result
+                except TimeoutError:
+                    raise
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "error": f"Solver error: {str(e)[:200]}",
+                        "final_answer": None,
+                        "final_unit": None,
+                        "total_cost": 0.0,
+                    }
+            else:
+                # Windows: no timeout
+                try:
+                    if use_single_agent:
+                        result = solve_problem(problem_text)
+                    else:
+                        result = await solve_problem(problem_text)
                     return result
-            except TimeoutError:
-                raise
-            except Exception as e:
-                # Catch any other errors and return as error result
-                return {
-                    "success": False,
-                    "error": f"Solver error: {str(e)[:200]}",
-                    "final_answer": None,
-                    "final_unit": None,
-                    "total_time": 0,
-                    "total_cost": 0.0,
-                }
-        else:
-            # On Windows, just execute without timeout (signal.alarm not available)
-            try:
-                result = await solve_problem(problem_text)
-                return result
-            except Exception as e:
-                return {
-                    "success": False,
-                    "error": f"Solver error: {str(e)[:200]}",
-                    "final_answer": None,
-                    "final_unit": None,
-                    "total_time": 0,
-                    "total_cost": 0.0,
-                }
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "error": f"Solver error: {str(e)[:200]}",
+                        "final_answer": None,
+                        "final_unit": None,
+                        "total_cost": 0.0,
+                    }
+
+        # NEW ROUTING LOGIC
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../core'))
+        from router import classify_problem
+        from single_agent.solver import solve_problem as solve_single_agent
+        from orchestrate import solve_problem as solve_multi_agent
+
+        # Step 1: Classify problem
+        classification, routing_cost = classify_problem(problem_text)
+
+        print(f"🚦 Router: {classification.tier} (confidence: {classification.confidence:.2f})")
+        print(f"   Reasoning: {classification.reasoning}")
+
+        # Step 2: Dispatch to appropriate solver (with timeout)
+        try:
+            if sys.platform != "win32":
+                with time_limit(self.timeout_seconds):
+                    result = await self._dispatch_to_solver(
+                        classification, problem_text, solve_single_agent, solve_multi_agent
+                    )
+            else:
+                result = await self._dispatch_to_solver(
+                    classification, problem_text, solve_single_agent, solve_multi_agent
+                )
+        except TimeoutError:
+            raise
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Solver error: {str(e)[:200]}",
+                "final_answer": None,
+                "final_unit": None,
+                "total_cost": routing_cost,
+                "routing_tier": classification.tier,
+                "routing_confidence": classification.confidence,
+                "routing_cost": routing_cost,
+                "routing_reasoning": classification.reasoning,
+            }
+
+        # Step 3: Add routing metadata to result
+        if isinstance(result, dict):
+            result["routing_tier"] = classification.tier
+            result["routing_confidence"] = classification.confidence
+            result["routing_cost"] = routing_cost
+            result["routing_reasoning"] = classification.reasoning
+            # Update total cost to include routing
+            result["total_cost"] = result.get("total_cost", 0.0) + routing_cost
+
+        return result
+
+    async def _dispatch_to_solver(self, classification, problem_text, solve_single_agent, solve_multi_agent):
+        """Dispatch problem to appropriate solver based on classification.
+
+        Args:
+            classification: ProblemClassification from router
+            problem_text: Problem text
+            solve_single_agent: Function reference to single-agent solver
+            solve_multi_agent: Function reference to multi-agent solver (async)
+
+        Returns:
+            Result dictionary from solver
+        """
+        if classification.tier == "EASY":
+            # EASY: Single-agent with Flash (fast and cheap)
+            print("   → Using single-agent solver with gemini-3.0-flash")
+            result = solve_single_agent(
+                problem=problem_text,
+                max_iterations=7,
+                model="gemini-3.0-flash"
+            )
+            return result
+
+        elif classification.tier == "MEDIUM":
+            # MEDIUM: Single-agent with Pro (current default)
+            print("   → Using single-agent solver with gemini-3-pro-preview")
+            result = solve_single_agent(
+                problem=problem_text,
+                max_iterations=7,
+                model="gemini-3-pro-preview"
+            )
+            return result
+
+        else:  # HARD
+            # HARD: Full multi-agent orchestrator
+            print("   → Using multi-agent orchestrator (Planner + Swarm)")
+            result = await solve_multi_agent(problem_text)
+            return result
 
     def _categorize_error(self, error_msg: str) -> str:
         """Categorize error type based on error message.
