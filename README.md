@@ -791,14 +791,17 @@ python -m src.benchmarking.cli run --config benchmark_configs/scibench_fast.yaml
 # Example output:
 # 🚦 Router: EASY (confidence: 0.92)
 #    Reasoning: Single definition and one-step calculation
+#    Time: 0.45s | Cost: $0.000082
 #    → Using single-agent solver with gemini-3-flash-preview
 #
 # 🚦 Router: MEDIUM (confidence: 0.78)
 #    Reasoning: Standard textbook problem with 3 clear steps
+#    Time: 0.52s | Cost: $0.000095
 #    → Using single-agent solver with gemini-3-pro-preview
 #
 # 🚦 Router: HARD (confidence: 0.85)
 #    Reasoning: Multi-page derivation requiring strategic planning
+#    Time: 0.61s | Cost: $0.000103
 #    → Using multi-agent orchestrator (Planner + Swarm)
 ```
 
@@ -815,12 +818,20 @@ result = executor.execute(problem)
 # Access routing information
 print(f"Tier: {result.routing_tier}")          # "EASY", "MEDIUM", or "HARD"
 print(f"Confidence: {result.routing_confidence}")  # 0.0-1.0
-print(f"Cost: ${result.routing_cost:.6f}")    # Routing overhead
-print(f"Reasoning: {result.routing_reasoning}")    # Why this tier
+print(f"Cost: ${result.routing_cost:.6f}")    # Routing overhead cost
+print(f"Time: {result.routing_time:.2f}s")    # Routing classification time
+print(f"Reasoning: {result.routing_reasoning}")    # Why this tier was selected
 
-# Analyze cost savings
-print(f"Total cost: ${result.total_cost:.4f}")
-print(f"Solver cost: ${result.total_cost - result.routing_cost:.4f}")
+# Analyze cost and time breakdown
+print(f"\n--- Timing ---")
+print(f"Router time: {result.routing_time:.2f}s")
+print(f"Solver time: {result.total_time - result.routing_time:.2f}s")
+print(f"Total time: {result.total_time:.2f}s")
+
+print(f"\n--- Cost Breakdown ---")
+print(f"Router cost: ${result.routing_cost:.6f}")
+print(f"Solver cost: ${result.total_cost - result.routing_cost:.6f}")
+print(f"Total cost: ${result.total_cost:.6f}")
 ```
 
 ### Troubleshooting Routing

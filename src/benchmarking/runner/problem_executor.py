@@ -75,7 +75,8 @@ class ProblemResult(BaseModel):
     # Routing metadata
     routing_tier: Optional[str] = None  # "EASY", "MEDIUM", "HARD"
     routing_confidence: Optional[float] = None  # Confidence in routing classification (0-1)
-    routing_cost: Optional[float] = None  # Cost of router classification
+    routing_cost: Optional[float] = None  # Cost of router classification in USD
+    routing_time: Optional[float] = None  # Time to run router classification in seconds
     routing_reasoning: Optional[str] = None  # Why this tier was selected
 
 
@@ -174,6 +175,7 @@ class ProblemExecutor:
                     routing_tier=result.get("routing_tier"),
                     routing_confidence=result.get("routing_confidence"),
                     routing_cost=result.get("routing_cost"),
+                    routing_time=result.get("routing_time"),
                     routing_reasoning=result.get("routing_reasoning"),
                 )
             else:
@@ -212,6 +214,7 @@ class ProblemExecutor:
                     routing_tier=result.get("routing_tier"),
                     routing_confidence=result.get("routing_confidence"),
                     routing_cost=result.get("routing_cost"),
+                    routing_time=result.get("routing_time"),
                     routing_reasoning=result.get("routing_reasoning"),
                 )
 
@@ -276,7 +279,7 @@ class ProblemExecutor:
                 try:
                     with time_limit(self.timeout_seconds):
                         if use_single_agent:
-                            result = solve_problem(problem_text)
+                            result = await solve_problem(problem_text)
                         else:
                             result = await solve_problem(problem_text)
                         return result
@@ -294,7 +297,7 @@ class ProblemExecutor:
                 # Windows: no timeout
                 try:
                     if use_single_agent:
-                        result = solve_problem(problem_text)
+                        result = await solve_problem(problem_text)
                     else:
                         result = await solve_problem(problem_text)
                     return result
@@ -313,11 +316,15 @@ class ProblemExecutor:
         from single_agent.solver import solve_problem as solve_single_agent
         from orchestrate import solve_problem as solve_multi_agent
 
-        # Step 1: Classify problem
+        # Step 1: Classify problem and track timing
+        router_start_time = time.time()
         classification, routing_cost = classify_problem(problem_text)
+        router_end_time = time.time()
+        router_time = router_end_time - router_start_time
 
         print(f"🚦 Router: {classification.tier} (confidence: {classification.confidence:.2f})")
         print(f"   Reasoning: {classification.reasoning}")
+        print(f"   Time: {router_time:.2f}s | Cost: ${routing_cost:.6f}")
 
         # Step 2: Dispatch to appropriate solver (with timeout)
         try:
@@ -351,8 +358,11 @@ class ProblemExecutor:
             result["routing_confidence"] = classification.confidence
             result["routing_cost"] = routing_cost
             result["routing_reasoning"] = classification.reasoning
+            result["routing_time"] = router_time
             # Update total cost to include routing
             result["total_cost"] = result.get("total_cost", 0.0) + routing_cost
+            # Update total time to include routing
+            result["total_time"] = result.get("total_time", 0.0) + router_time
 
         return result
 
@@ -371,7 +381,7 @@ class ProblemExecutor:
         if classification.tier == "EASY":
             # EASY: Single-agent with Flash (fast and cheap)
             print("   → Using single-agent solver with gemini-3-flash-preview")
-            result = solve_single_agent(
+            result = await solve_single_agent(
                 problem=problem_text,
                 max_iterations=7,
                 model="gemini-3-flash-preview"
@@ -381,7 +391,7 @@ class ProblemExecutor:
         elif classification.tier == "MEDIUM":
             # MEDIUM: Single-agent with Pro (current default)
             print("   → Using single-agent solver with gemini-3-pro-preview")
-            result = solve_single_agent(
+            result = await solve_single_agent(
                 problem=problem_text,
                 max_iterations=7,
                 model="gemini-3-pro-preview"

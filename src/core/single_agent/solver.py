@@ -272,7 +272,7 @@ def _extract_answer(response: str) -> Tuple[Union[float, str], str]:
     return value, unit
 
 
-def _run_agent_loop(
+async def _run_agent_loop(
     problem: str,
     sandbox: Optional["Sandbox"] = None,
     max_iterations: int = 7,
@@ -358,7 +358,7 @@ def _run_agent_loop(
 
                         try:
                             # Execute code in sandbox
-                            last_output = asyncio.run(run_python(code, sandbox))
+                            last_output = await run_python(code, sandbox)
                         except Exception as e:
                             last_output = f"Error executing code: {str(e)}"
 
@@ -379,7 +379,7 @@ def _run_agent_loop(
     return f"Max iterations ({max_iterations}) exceeded", code_executed, total_cost
 
 
-def solve_problem(
+async def solve_problem(
     problem: str = "",
     max_iterations: int = 7,
     timeout: int = 120,
@@ -438,7 +438,7 @@ def solve_problem(
 
     try:
         # Run agent loop
-        response_text, code_executed, total_cost = _run_agent_loop(
+        response_text, code_executed, total_cost = await _run_agent_loop(
             problem,
             sandbox=sandbox,
             max_iterations=max_iterations,
