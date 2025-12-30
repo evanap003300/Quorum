@@ -123,7 +123,7 @@ def classify_problem(problem: str, image_path: Optional[str] = None) -> Tuple[Pr
 
         # Use Flash model for fast, cheap classification
         model = genai.GenerativeModel(
-            model_name="gemini-3.0-flash",
+            model_name="gemini-3-flash-preview",
             generation_config={
                 "temperature": 0.1,
                 "response_mime_type": "application/json"
@@ -143,8 +143,8 @@ def classify_problem(problem: str, image_path: Optional[str] = None) -> Tuple[Pr
         output_tokens = usage.candidates_token_count
 
         cost = 0.0
-        if "gemini-3.0-flash" in MODEL_PRICING:
-            pricing = MODEL_PRICING["gemini-3.0-flash"]
+        if "gemini-3-flash-preview" in MODEL_PRICING:
+            pricing = MODEL_PRICING["gemini-3-flash-preview"]
             cost = ((input_tokens * pricing["input"]) + (output_tokens * pricing["output"])) / 1_000_000
 
         return classification, cost

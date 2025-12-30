@@ -21,13 +21,13 @@ Quorum now includes an intelligent **3-tier routing system** that classifies pro
 
 | Tier | Problem Type | Solver | Model | Speed | Cost | Use Case |
 |------|-------------|--------|-------|-------|------|----------|
-| **EASY** | Simple definitions, single-step math, unit conversions | Single-Agent | `gemini-3.0-flash` | 2-3x faster | 8-10x cheaper | Trivial problems, quick answers |
+| **EASY** | Simple definitions, single-step math, unit conversions | Single-Agent | `gemini-3-flash-preview` | 2-3x faster | 8-10x cheaper | Trivial problems, quick answers |
 | **MEDIUM** | Textbook problems (AP Physics, Calc I-II), 2-4 clear steps | Single-Agent | `gemini-3-pro-preview` | Standard | Standard | Standard homework/textbook problems |
 | **HARD** | SciBench, ambiguous problems, multi-page derivations | Multi-Agent + Swarm | `gemini-3-pro-preview` | Standard | Standard | Complex problems requiring planning & validation |
 
 ### How Routing Works
 
-1. **Classification**: When a problem arrives, the router uses `gemini-3.0-flash` to classify it into EASY/MEDIUM/HARD
+1. **Classification**: When a problem arrives, the router uses `gemini-3-flash-preview` to classify it into EASY/MEDIUM/HARD
 2. **Dispatch**: Based on classification, the problem is routed to the appropriate solver:
    - **EASY** → Single-agent solver with Flash (fast & cheap, no planning overhead)
    - **MEDIUM** → Single-agent solver with Pro (one-shot solving, no step decomposition)
@@ -241,7 +241,7 @@ Main function: `solve_problem(problem: str, image_path: Optional[str])`
 **Intelligent problem difficulty classification and dispatch** (~185 lines)
 
 Main function: `classify_problem(problem: str, image_path: Optional[str]) -> Tuple[ProblemClassification, float]`
-- Uses `gemini-3.0-flash` for fast, cheap classification
+- Uses `gemini-3-flash-preview` for fast, cheap classification
 - Classifies problems into EASY/MEDIUM/HARD tiers
 - Returns structured output with confidence score and reasoning
 - Negligible overhead: ~0.5-1 second, ~$0.0008 per problem
@@ -250,7 +250,7 @@ Main function: `classify_problem(problem: str, image_path: Optional[str]) -> Tup
 - **Structured Output**: Pydantic model with tier, confidence, reasoning, key_indicators
 - **Cost Tracking**: Calculates routing cost using centralized pricing config
 - **Error Handling**: Falls back to MEDIUM tier on router failure (safe middle ground)
-- **JSON Schema**: Uses model_name="gemini-3.0-flash" with response_mime_type="application/json"
+- **JSON Schema**: Uses model_name="gemini-3-flash-preview" with response_mime_type="application/json"
 
 **Classification Components:**
 - `DifficultyTier` enum: EASY, MEDIUM, HARD
@@ -741,7 +741,7 @@ The routing system provides:
 4. **Flexibility**: Can be toggled off for backward compatibility
 5. **Visibility**: Routing metadata helps understand problem distribution
 
-**Design Choice: Fast Classification with gemini-3.0-flash**
+**Design Choice: Fast Classification with gemini-3-flash-preview**
 - Flash is 8-10x cheaper than Pro for routing decisions
 - ~0.5-1 second overhead (negligible per problem)
 - Cost: ~$0.0008 per problem (adds <1% to total cost)
@@ -791,7 +791,7 @@ python -m src.benchmarking.cli run --config benchmark_configs/scibench_fast.yaml
 # Example output:
 # 🚦 Router: EASY (confidence: 0.92)
 #    Reasoning: Single definition and one-step calculation
-#    → Using single-agent solver with gemini-3.0-flash
+#    → Using single-agent solver with gemini-3-flash-preview
 #
 # 🚦 Router: MEDIUM (confidence: 0.78)
 #    Reasoning: Standard textbook problem with 3 clear steps
@@ -832,7 +832,7 @@ print(f"Solver cost: ${result.total_cost - result.routing_cost:.4f}")
 
 **Router Failing (Defaulting to MEDIUM):**
 - Check that `GOOGLE_API_KEY` is set
-- Verify gemini-3.0-flash model is available in your region
+- Verify gemini-3-flash-preview model is available in your region
 - Router falls back to MEDIUM tier on any error (safe choice)
 
 **Need Legacy Behavior:**
@@ -849,7 +849,7 @@ from src.core.single_agent.solver import solve_problem
 # EASY tier: Use Flash (fast & cheap)
 result = solve_problem(
     problem="What is F=ma?",
-    model="gemini-3.0-flash"
+    model="gemini-3-flash-preview"
 )
 
 # MEDIUM tier: Use Pro (good reasoning)
@@ -868,7 +868,7 @@ Model pricing is centralized in `src/core/orchestrator/config/pricing.py`:
 
 ```python
 MODEL_PRICING = {
-    "gemini-3.0-flash": {
+    "gemini-3-flash-preview": {
         "input": 0.5,      # $0.50 per 1M input tokens
         "output": 3.0,     # $3.00 per 1M output tokens
     },

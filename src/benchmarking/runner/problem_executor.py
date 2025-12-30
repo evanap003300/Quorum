@@ -370,11 +370,11 @@ class ProblemExecutor:
         """
         if classification.tier == "EASY":
             # EASY: Single-agent with Flash (fast and cheap)
-            print("   → Using single-agent solver with gemini-3.0-flash")
+            print("   → Using single-agent solver with gemini-3-flash-preview")
             result = solve_single_agent(
                 problem=problem_text,
                 max_iterations=7,
-                model="gemini-3.0-flash"
+                model="gemini-3-flash-preview"
             )
             return result
 

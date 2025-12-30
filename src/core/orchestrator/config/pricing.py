@@ -11,15 +11,7 @@ MODEL_PRICING = {
         "output": 12.0,    # $12 per 1M output tokens
     },
     "gemini-3-flash-preview": {
-        "input": 0.075,    # $0.075 per 1M input tokens
-        "output": 0.3,     # $0.3 per 1M output tokens
-    },
-    "gemini-3.0-flash": {
         "input": 0.5,      # $0.50 per 1M input tokens
-        "output": 3.0,     # $3.00 per 1M output tokens
-    },
-    "gemini-3-flash": {
-        "input": 0.5,      # $0.50 per 1M input tokens (alias)
         "output": 3.0,     # $3.00 per 1M output tokens
     },
     "openai/gpt-4.1-mini": {
