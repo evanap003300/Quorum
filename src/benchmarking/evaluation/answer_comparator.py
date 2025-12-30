@@ -85,7 +85,31 @@ def extract_number(answer: Union[float, str]) -> Tuple[Optional[float], str]:
         except Exception:
             attempts.append("percentage_failed")
 
-    # Strategy 5.5: Try first token extraction (handles "10 m/s" -> extract "10", not the "/" part)
+    # Strategy 5.5: Scientific notation with LaTeX/Unicode exponents
+    # Handles formats like: "1.91 $10^{-47}$", "1.91 × 10^-47", "1.91 \times 10^-47"
+    latex_sci_notation_patterns = [
+        # LaTeX format with optional content after exponent: "1.91 $10^{-47}$" or "1.91 $10^{-47} \mathrm{...}$"
+        r'(-?\d+\.?\d*)\s*\$10\^\{?(-?\d+)\}?',
+        # Unicode multiplication: "1.91 × 10^-47"
+        r'(-?\d+\.?\d*)\s*[×\*]\s*10\^\s*(-?\d+)',
+        # LaTeX times: "1.91 \times 10^-47"
+        r'(-?\d+\.?\d*)\s*\\times\s+10\^\s*(-?\d+)',
+        # Standard format with power: "1.91 * 10**-47" or "1.91e-47" (already handled)
+    ]
+
+    for pattern in latex_sci_notation_patterns:
+        match = re.search(pattern, text)
+        if match:
+            try:
+                base = float(match.group(1))
+                exponent = int(match.group(2))
+                result = base * (10 ** exponent)
+                if not (math.isnan(result) or math.isinf(result)):
+                    return result, "latex_scientific_notation"
+            except (ValueError, AttributeError):
+                attempts.append("latex_sci_notation_failed")
+
+    # Strategy 5.6: Try first token extraction (handles "10 m/s" -> extract "10", not the "/" part)
     # Split by whitespace and try to parse the first token
     tokens = text.split()
     if tokens:
