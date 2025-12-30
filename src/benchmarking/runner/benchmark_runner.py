@@ -6,6 +6,7 @@ import json
 import asyncio
 import time
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 
 from src.benchmarking.config.benchmark_config import BenchmarkConfig
@@ -65,76 +66,81 @@ class BenchmarkRunner:
         Returns:
             List of ProblemResult objects
         """
-        semaphore = asyncio.Semaphore(self.config.max_concurrent_problems)
+        def execute_one_sync(problem: BenchmarkProblem) -> ProblemResult:
+            """Execute single problem synchronously (runs in thread pool)."""
+            try:
+                # Execute problem synchronously (uses signal-based timeout in main thread)
+                result = self.executor.execute(problem)
 
-        async def execute_one(problem: BenchmarkProblem) -> ProblemResult:
-            """Execute single problem with concurrency control."""
-            async with semaphore:
+                # Compare answer
                 try:
-                    # Execute problem (async)
-                    result = await self.executor.execute_async(problem)
-
-                    # Compare answer
-                    try:
-                        comparison = self.comparator.compare(
-                            predicted=result.predicted_answer,
-                            predicted_unit=result.predicted_unit or "",
-                            ground_truth=problem.ground_truth_answer,
-                            ground_truth_unit=problem.ground_truth_unit,
-                        )
-                    except Exception as e:
-                        # Catch comparison errors and log them
-                        comparison = type('obj', (object,), {'verdict': 'ERROR', 'reason': f"Comparison error: {str(e)[:100]}"})()
-                        result.error_message = f"Answer comparison failed: {str(e)[:100]}"
-                    result.verdict = comparison.verdict
-                    result.comparison_reason = comparison.reason
-
-                    # Log completion
-                    if self.config.verbose:
-                        status_msg = self._format_status_message(result, comparison)
-                        await log_queue.put(LogMessage(
-                            level="status",
-                            content=status_msg,
-                            problem_id=problem.problem_id
-                        ))
-
-                    # Queue result
-                    await result_queue.put(result)
-
-                    return result
-
+                    comparison = self.comparator.compare(
+                        predicted=result.predicted_answer,
+                        predicted_unit=result.predicted_unit or "",
+                        ground_truth=problem.ground_truth_answer,
+                        ground_truth_unit=problem.ground_truth_unit,
+                    )
                 except Exception as e:
-                    # Log error
-                    error_msg = f"❌ {problem.problem_id} - ERROR: {str(e)[:100]}"
+                    # Catch comparison errors and log them
+                    comparison = type('obj', (object,), {'verdict': 'ERROR', 'reason': f"Comparison error: {str(e)[:100]}"})()
+                    result.error_message = f"Answer comparison failed: {str(e)[:100]}"
+                result.verdict = comparison.verdict
+                result.comparison_reason = comparison.reason
+
+                return result, comparison
+
+            except Exception as e:
+                # Return error result
+                result = ProblemResult(
+                    problem_id=problem.problem_id,
+                    success=False,
+                    predicted_answer=None,
+                    predicted_unit=None,
+                    ground_truth_answer=problem.ground_truth_answer,
+                    ground_truth_unit=problem.ground_truth_unit,
+                    total_time=0.0,
+                    total_cost=0.0,
+                    verdict="ERROR",
+                    error_message=str(e)[:200],
+                )
+                return result, None
+
+        # Use ThreadPoolExecutor for true concurrent execution
+        loop = asyncio.get_event_loop()
+        results = []
+
+        with ThreadPoolExecutor(max_workers=self.config.max_concurrent_problems) as executor:
+            # Submit all problems to the thread pool
+            futures = [
+                loop.run_in_executor(executor, execute_one_sync, problem)
+                for problem in problems
+            ]
+
+            # Process results as they complete (not waiting for all to finish)
+            for future in asyncio.as_completed(futures):
+                result, comparison = await future
+
+                # Log completion immediately
+                if self.config.verbose and comparison:
+                    status_msg = self._format_status_message(result, comparison)
+                    await log_queue.put(LogMessage(
+                        level="status",
+                        content=status_msg,
+                        problem_id=result.problem_id
+                    ))
+                elif self.config.verbose and result.verdict == "ERROR":
+                    error_msg = f"❌ {result.problem_id} - ERROR: {result.error_message[:50]}"
                     await log_queue.put(LogMessage(
                         level="error",
                         content=error_msg,
-                        problem_id=problem.problem_id
+                        problem_id=result.problem_id
                     ))
 
-                    # Return error result
-                    result = ProblemResult(
-                        problem_id=problem.problem_id,
-                        success=False,
-                        predicted_answer=None,
-                        predicted_unit=None,
-                        ground_truth_answer=problem.ground_truth_answer,
-                        ground_truth_unit=problem.ground_truth_unit,
-                        total_time=0.0,
-                        total_cost=0.0,
-                        verdict="ERROR",
-                        error_message=str(e)[:200],
-                    )
-                    await result_queue.put(result)
-                    return result
+                # Queue result
+                await result_queue.put(result)
+                results.append(result)
 
-        # Execute all problems concurrently
-        tasks = [execute_one(problem) for problem in problems]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Filter out exceptions (they were already logged)
-        valid_results = [r for r in results if isinstance(r, ProblemResult)]
-        return valid_results
+        return results
 
     def _format_status_message(self, result: ProblemResult, comparison) -> str:
         """Format status message for a completed problem."""

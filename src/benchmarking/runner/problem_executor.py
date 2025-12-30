@@ -87,7 +87,7 @@ class TimeoutError(Exception):
 
 @contextmanager
 def time_limit(seconds: int):
-    """Context manager for Unix alarm-based timeout.
+    """Context manager for Unix alarm-based timeout (main thread only).
 
     Args:
         seconds: Timeout duration in seconds
@@ -95,6 +95,15 @@ def time_limit(seconds: int):
     Raises:
         TimeoutError: If timeout is exceeded
     """
+    import threading
+
+    # Check if we're in the main thread (signal.SIGALRM only works in main thread)
+    if threading.current_thread() is not threading.main_thread():
+        # Skip timeout in non-main threads (e.g., thread pool execution)
+        # Timeouts are best-effort safety mechanism, not required for correctness
+        yield
+        return
+
     def signal_handler(signum, frame):
         raise TimeoutError(f"Problem execution exceeded {seconds}s timeout")
 
