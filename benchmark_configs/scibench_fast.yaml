@@ -6,6 +6,8 @@ random_seed: 42
 skip_image_problems: true
 timeout_per_problem: 300          # 5 minutes - gives planner+lawyer+solver room to work
 checkpoint_frequency: 2
+max_concurrent_problems: 5        # Number of problems to run in parallel (1 = sequential)
+checkpoint_interval_seconds: 30   # Save checkpoint every 30 seconds
 output_dir: benchmark_results
 verbose: true
 numeric_tolerance: 0.01

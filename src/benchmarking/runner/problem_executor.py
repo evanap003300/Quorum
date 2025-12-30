@@ -118,8 +118,8 @@ class ProblemExecutor:
         """
         self.timeout_seconds = timeout_seconds
 
-    def execute(self, problem: BenchmarkProblem) -> ProblemResult:
-        """Execute a single problem.
+    async def execute_async(self, problem: BenchmarkProblem) -> ProblemResult:
+        """Execute a single problem (async version for concurrent execution).
 
         Args:
             problem: Benchmark problem to solve
@@ -134,7 +134,7 @@ class ProblemExecutor:
             from orchestrate import solve_problem
 
             # Execute with timeout (async)
-            result = asyncio.run(self._execute_with_timeout(problem.problem_text))
+            result = await self._execute_with_timeout(problem.problem_text)
 
             # Extract results
             end_time = time.time()
@@ -249,6 +249,17 @@ class ProblemExecutor:
                 error_message=str(e),
                 error_type="EXECUTION_ERROR",
             )
+
+    def execute(self, problem: BenchmarkProblem) -> ProblemResult:
+        """Execute a single problem (synchronous wrapper for backward compatibility).
+
+        Args:
+            problem: Benchmark problem to solve
+
+        Returns:
+            ProblemResult with outcome and metrics
+        """
+        return asyncio.run(self.execute_async(problem))
 
     async def _execute_with_timeout(self, problem_text: str) -> dict:
         """Execute solve_problem with routing and timeout handling (async).

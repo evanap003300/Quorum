@@ -3,6 +3,9 @@
 from typing import List, Optional, Tuple
 from pathlib import Path
 import json
+import asyncio
+import time
+from dataclasses import dataclass
 from tqdm import tqdm
 
 from src.benchmarking.config.benchmark_config import BenchmarkConfig
@@ -11,6 +14,14 @@ from src.benchmarking.runner.problem_executor import ProblemExecutor, ProblemRes
 from src.benchmarking.evaluation.answer_comparator import AnswerComparator
 from src.benchmarking.metrics.aggregator import MetricsAggregator, MetricsSummary
 from src.benchmarking.storage.results_storage import ResultsStorage
+
+
+@dataclass
+class LogMessage:
+    """Message for logging queue."""
+    level: str  # "progress", "status", "error"
+    content: str
+    problem_id: Optional[str] = None
 
 
 class BenchmarkRunner:
@@ -36,6 +47,232 @@ class BenchmarkRunner:
             output_dir=config.output_dir,
             run_name=config.run_name,
         )
+        self.run_dir = self.storage.run_dir
+
+    async def _run_concurrent(
+        self,
+        problems: List[BenchmarkProblem],
+        log_queue: asyncio.Queue,
+        result_queue: asyncio.Queue,
+    ) -> List[ProblemResult]:
+        """Run problems concurrently with bounded parallelism.
+
+        Args:
+            problems: List of problems to execute
+            log_queue: Queue for logging messages
+            result_queue: Queue for completed results
+
+        Returns:
+            List of ProblemResult objects
+        """
+        semaphore = asyncio.Semaphore(self.config.max_concurrent_problems)
+
+        async def execute_one(problem: BenchmarkProblem) -> ProblemResult:
+            """Execute single problem with concurrency control."""
+            async with semaphore:
+                try:
+                    # Execute problem (async)
+                    result = await self.executor.execute_async(problem)
+
+                    # Compare answer
+                    try:
+                        comparison = self.comparator.compare(
+                            predicted=result.predicted_answer,
+                            predicted_unit=result.predicted_unit or "",
+                            ground_truth=problem.ground_truth_answer,
+                            ground_truth_unit=problem.ground_truth_unit,
+                        )
+                    except Exception as e:
+                        # Catch comparison errors and log them
+                        comparison = type('obj', (object,), {'verdict': 'ERROR', 'reason': f"Comparison error: {str(e)[:100]}"})()
+                        result.error_message = f"Answer comparison failed: {str(e)[:100]}"
+                    result.verdict = comparison.verdict
+                    result.comparison_reason = comparison.reason
+
+                    # Log completion
+                    if self.config.verbose:
+                        status_msg = self._format_status_message(result, comparison)
+                        await log_queue.put(LogMessage(
+                            level="status",
+                            content=status_msg,
+                            problem_id=problem.problem_id
+                        ))
+
+                    # Queue result
+                    await result_queue.put(result)
+
+                    return result
+
+                except Exception as e:
+                    # Log error
+                    error_msg = f"❌ {problem.problem_id} - ERROR: {str(e)[:100]}"
+                    await log_queue.put(LogMessage(
+                        level="error",
+                        content=error_msg,
+                        problem_id=problem.problem_id
+                    ))
+
+                    # Return error result
+                    result = ProblemResult(
+                        problem_id=problem.problem_id,
+                        success=False,
+                        predicted_answer=None,
+                        predicted_unit=None,
+                        ground_truth_answer=problem.ground_truth_answer,
+                        ground_truth_unit=problem.ground_truth_unit,
+                        total_time=0.0,
+                        total_cost=0.0,
+                        verdict="ERROR",
+                        error_message=str(e)[:200],
+                    )
+                    await result_queue.put(result)
+                    return result
+
+        # Execute all problems concurrently
+        tasks = [execute_one(problem) for problem in problems]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Filter out exceptions (they were already logged)
+        valid_results = [r for r in results if isinstance(r, ProblemResult)]
+        return valid_results
+
+    def _format_status_message(self, result: ProblemResult, comparison) -> str:
+        """Format status message for a completed problem."""
+        verdict_emoji = {
+            "CORRECT": "✅",
+            "INCORRECT": "❌",
+            "ERROR": "⚠️",
+            "TIMEOUT": "⏱️",
+        }
+        emoji = verdict_emoji.get(result.verdict, "❓")
+
+        msg = f"{emoji} {result.problem_id} - {result.verdict}"
+
+        if result.verdict == "CORRECT":
+            msg += f" | Predicted: {result.predicted_answer} {result.predicted_unit}"
+        elif result.verdict == "INCORRECT":
+            msg += f" | Predicted: {result.predicted_answer} {result.predicted_unit} | Expected: {result.ground_truth_answer} {result.ground_truth_unit}"
+            if comparison.reason:
+                msg += f" | Reason: {comparison.reason}"
+        elif result.verdict == "ERROR":
+            msg += f" | Error: {result.error_message[:50]}"
+
+        return msg
+
+    async def _logging_consumer(
+        self,
+        log_queue: asyncio.Queue,
+        progress_bar: tqdm,
+        stop_event: asyncio.Event,
+    ):
+        """Consume log messages and write atomically.
+
+        Args:
+            log_queue: Queue of log messages
+            progress_bar: tqdm progress bar to update
+            stop_event: Event to signal shutdown
+        """
+        while not stop_event.is_set() or not log_queue.empty():
+            try:
+                msg = await asyncio.wait_for(log_queue.get(), timeout=0.1)
+
+                if msg.level == "status":
+                    # Write status message
+                    tqdm.write(msg.content)
+                    progress_bar.update(1)
+
+                elif msg.level == "error":
+                    # Write error message
+                    tqdm.write(msg.content)
+                    progress_bar.update(1)
+
+                log_queue.task_done()
+
+            except asyncio.TimeoutError:
+                continue  # No messages, check stop event again
+
+    async def _checkpoint_saver(
+        self,
+        result_queue: asyncio.Queue,
+        stop_event: asyncio.Event,
+    ):
+        """Periodically save checkpoints from completed results.
+
+        Args:
+            result_queue: Queue of completed results
+            stop_event: Event to signal shutdown
+        """
+        results_buffer = []
+        last_save = time.time()
+
+        while not stop_event.is_set() or not result_queue.empty():
+            try:
+                # Collect results from queue
+                result = await asyncio.wait_for(result_queue.get(), timeout=0.1)
+                results_buffer.append(result)
+                result_queue.task_done()
+            except asyncio.TimeoutError:
+                pass  # No results, check if it's time to save
+
+            # Save checkpoint periodically
+            current_time = time.time()
+            if current_time - last_save >= self.config.checkpoint_interval_seconds:
+                if results_buffer:
+                    await asyncio.to_thread(self._save_checkpoint, results_buffer.copy())
+                    last_save = current_time
+
+        # Final save before exit
+        if results_buffer:
+            await asyncio.to_thread(self._save_checkpoint, results_buffer)
+
+    async def _run_concurrent_with_logging(
+        self,
+        problems: List[BenchmarkProblem],
+    ) -> List[ProblemResult]:
+        """Execute problems concurrently with logging coordination.
+
+        Args:
+            problems: List of problems to execute
+
+        Returns:
+            List of completed ProblemResult objects
+        """
+        # Create queues
+        log_queue = asyncio.Queue()
+        result_queue = asyncio.Queue()
+        stop_event = asyncio.Event()
+
+        # Create progress bar
+        progress_bar = tqdm(total=len(problems), desc="Benchmark", unit="problem")
+
+        # Start background tasks
+        logging_task = asyncio.create_task(
+            self._logging_consumer(log_queue, progress_bar, stop_event)
+        )
+        checkpoint_task = asyncio.create_task(
+            self._checkpoint_saver(result_queue, stop_event)
+        )
+
+        try:
+            # Run concurrent execution
+            results = await self._run_concurrent(problems, log_queue, result_queue)
+
+            # Wait for queues to drain
+            await log_queue.join()
+            await result_queue.join()
+
+        finally:
+            # Signal shutdown
+            stop_event.set()
+
+            # Wait for background tasks
+            await logging_task
+            await checkpoint_task
+
+            # Close progress bar
+            progress_bar.close()
+
+        return results
 
     def run(self) -> Tuple[List[ProblemResult], MetricsSummary]:
         """Run complete benchmark.
@@ -86,70 +323,18 @@ class BenchmarkRunner:
 
         # Execute problems
         if self.config.verbose:
-            print(f"\nRunning benchmark...\n")
+            print(f"\nRunning benchmark on {len(problems) - len(completed_ids)} problems...")
+            print(f"   Concurrent workers: {self.config.max_concurrent_problems}")
+            print(f"   Checkpoint interval: {self.config.checkpoint_interval_seconds}s\n")
 
         results = checkpoint.get("results", []) if checkpoint else []
         result_objs = [ProblemResult(**r) for r in results]
 
         problems_to_run = [p for p in problems if p.problem_id not in completed_ids]
 
-        for problem in tqdm(problems_to_run, desc="Benchmark", unit="problem"):
-            # Execute problem
-            result = self.executor.execute(problem)
-
-            # Compare answer
-            try:
-                comparison = self.comparator.compare(
-                    predicted=result.predicted_answer,
-                    predicted_unit=result.predicted_unit or "",
-                    ground_truth=result.ground_truth_answer,
-                    ground_truth_unit=result.ground_truth_unit,
-                )
-
-                # Update result verdict and comparison details
-                result.verdict = comparison.verdict
-                result.comparison_reason = comparison.reason
-
-            except Exception as e:
-                # Catch comparison errors and log them
-                result.verdict = "ERROR"
-                if result.error_message:
-                    result.error_message += f" [Comparison error: {str(e)[:100]}]"
-                else:
-                    result.error_message = f"Answer comparison failed: {str(e)[:100]}"
-                if self.config.verbose:
-                    tqdm.write(f"  WARNING: Comparison error for {problem.problem_id}: {str(e)[:80]}")
-
-            result_objs.append(result)
-            completed_ids.add(problem.problem_id)
-
-            # Print progress with more detail
-            correct_count = sum(1 for r in result_objs if r.verdict == "CORRECT")
-            if self.config.verbose:
-                # Format predicted and ground truth for display
-                pred_display = f"{result.predicted_answer} {result.predicted_unit or ''}".strip()
-                truth_display = f"{result.ground_truth_answer} {result.ground_truth_unit}".strip()
-
-                status_msg = (
-                    f"Problem {problem.problem_id}: {result.verdict} "
-                    f"(Accuracy: {correct_count}/{len(result_objs)})\n"
-                    f"  Predicted: {pred_display}\n"
-                    f"  Expected:  {truth_display}"
-                )
-
-                # Add detailed comparison reason
-                if result.comparison_reason:
-                    status_msg += f"\n  Reason:    {result.comparison_reason[:120]}"
-
-                # Add error details if applicable
-                if result.verdict == "ERROR" and result.error_message:
-                    status_msg += f"\n  Error: {result.error_message[:80]}"
-
-                tqdm.write(status_msg)
-
-            # Save checkpoint
-            if len(result_objs) % self.config.checkpoint_frequency == 0:
-                self._save_checkpoint(result_objs)
+        # Run concurrent execution
+        concurrent_results = asyncio.run(self._run_concurrent_with_logging(problems_to_run))
+        result_objs.extend(concurrent_results)
 
         # Final checkpoint
         self._save_checkpoint(result_objs)

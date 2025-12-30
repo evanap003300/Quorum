@@ -1,0 +1,12 @@
+# Test configuration - sequential execution with 2 problems
+batch_size: 2
+random_seed: 42
+skip_image_problems: true
+timeout_per_problem: 300
+checkpoint_frequency: 1
+max_concurrent_problems: 1  # Sequential - test backward compatibility
+checkpoint_interval_seconds: 30
+output_dir: benchmark_results
+verbose: true
+numeric_tolerance: 0.01
+allow_unit_conversion: true

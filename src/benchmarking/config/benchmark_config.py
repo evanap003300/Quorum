@@ -22,6 +22,8 @@ class BenchmarkConfig(BaseModel):
     max_retries: int = Field(default=0, description="Maximum retries for failed problems")
     save_intermediate_results: bool = Field(default=True, description="Save results after each problem")
     checkpoint_frequency: int = Field(default=5, description="Save checkpoint every N problems")
+    max_concurrent_problems: int = Field(default=5, description="Number of problems to run concurrently (1 = sequential)")
+    checkpoint_interval_seconds: int = Field(default=30, description="Time between checkpoint saves in seconds")
 
     # Output configuration
     output_dir: str = Field(default="benchmark_results", description="Output directory for results")
@@ -71,3 +73,7 @@ class BenchmarkConfig(BaseModel):
             raise ValueError(f"numeric_tolerance must be between 0 and 1, got {self.numeric_tolerance}")
         if self.checkpoint_frequency <= 0:
             raise ValueError(f"checkpoint_frequency must be positive, got {self.checkpoint_frequency}")
+        if self.max_concurrent_problems <= 0:
+            raise ValueError(f"max_concurrent_problems must be positive, got {self.max_concurrent_problems}")
+        if self.checkpoint_interval_seconds <= 0:
+            raise ValueError(f"checkpoint_interval_seconds must be positive, got {self.checkpoint_interval_seconds}")
