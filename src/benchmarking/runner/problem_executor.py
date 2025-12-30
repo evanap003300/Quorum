@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel
 from typing import Union, Optional
+import asyncio
 import time
 import signal
 from contextlib import contextmanager
@@ -125,8 +126,8 @@ class ProblemExecutor:
             # Import here to avoid circular imports
             from orchestrate import solve_problem
 
-            # Execute with timeout
-            result = self._execute_with_timeout(problem.problem_text)
+            # Execute with timeout (async)
+            result = asyncio.run(self._execute_with_timeout(problem.problem_text))
 
             # Extract results
             end_time = time.time()
@@ -232,8 +233,8 @@ class ProblemExecutor:
                 error_type="EXECUTION_ERROR",
             )
 
-    def _execute_with_timeout(self, problem_text: str) -> dict:
-        """Execute solve_problem with timeout handling.
+    async def _execute_with_timeout(self, problem_text: str) -> dict:
+        """Execute solve_problem with timeout handling (async).
 
         Args:
             problem_text: Problem text to solve
@@ -256,7 +257,7 @@ class ProblemExecutor:
         if sys.platform != "win32":
             try:
                 with time_limit(self.timeout_seconds):
-                    result = solve_problem(problem_text)
+                    result = await solve_problem(problem_text)
                     return result
             except TimeoutError:
                 raise
@@ -273,7 +274,7 @@ class ProblemExecutor:
         else:
             # On Windows, just execute without timeout (signal.alarm not available)
             try:
-                result = solve_problem(problem_text)
+                result = await solve_problem(problem_text)
                 return result
             except Exception as e:
                 return {

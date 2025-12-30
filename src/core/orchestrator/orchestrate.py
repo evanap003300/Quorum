@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from planner.planner import plan
 from solver.solver import solve_step
+from solver.swarm import solve_step_with_swarm
 from solver.parsing import validate_result
 from planner.schema import StateObject, Plan
 from planner.critics.physics_lawyer import audit_plan
@@ -27,7 +28,7 @@ except Exception:
     pass
 
 
-def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[str, Any]:
+async def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[str, Any]:
     # Validate inputs
     if not problem and not image_path:
         raise ValueError("Must provide either 'problem' text or 'image_path'")
@@ -173,55 +174,56 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
 
         step_start_time = time.time()
 
-        # SELF-CORRECTION LOOP: Try step execution with retry logic
-        max_step_retries = 2
-        step_attempt = 0
-        last_error = None
+        # K-AHEAD SWARM WITH RETRY: Execute swarm up to 3 times
+        max_swarm_attempts = 3
+        swarm_attempt = 0
+        last_swarm_error = None
+        success = False
 
-        while step_attempt <= max_step_retries:
-            if step_attempt > 0:
-                print(f"  ↻ Retry {step_attempt}/{max_step_retries}: Attempting to fix error...")
+        while swarm_attempt < max_swarm_attempts:
+            swarm_attempt += 1
 
-            # Solve this step (passing hot sandbox and error context if retrying)
-            error_context = last_error if step_attempt > 0 else None
-            success, value, unit, error, cost = solve_step(step, state, sandbox, error_context=error_context)
+            # Execute swarm (k=3 parallel agents with majority voting)
+            success, value, unit, error, cost = await solve_step_with_swarm(step, state, sandbox, k=3)
             total_cost += cost
 
             if success:
-                step_time = time.time() - step_start_time
-                if step_attempt > 0:
-                    print(f"  ✓ RECOVERED: Step succeeded after {step_attempt} retry attempt(s)")
+                if swarm_attempt > 1:
+                    print(f"  ✓ RECOVERED: Swarm succeeded on attempt {swarm_attempt}/{max_swarm_attempts}")
                 break
             else:
-                last_error = error
-                step_attempt += 1
+                last_swarm_error = error
+                if swarm_attempt < max_swarm_attempts:
+                    print(f"  ↻ Swarm attempt {swarm_attempt}/{max_swarm_attempts} failed, retrying...")
 
-                if step_attempt > max_step_retries:
-                    print(f"  ✗ FAILED: {error}")
-                    # Cleanup sandbox before returning
-                    if sandbox:
-                        try:
-                            sandbox.kill()
-                        except:
-                            pass
-                    return {
-                        "success": False,
-                        "error": f"Step {step.step_id} failed after {max_step_retries + 1} attempts: {error}",
-                        "final_answer": None,
-                        "final_unit": None,
-                        "state": state,
-                        "plan": plan_obj,
-                        "failed_at_step": step.step_id,
-                        "total_time": time.time() - problem_start_time,
-                        "plan_time": plan_time,
-                        "review_time": review_time,
-                        "execution_time": time.time() - execution_start_time,
-                        "plan_cost": plan_cost,
-                        "review_cost": review_cost,
-                        "execution_cost": total_cost,
-                        "vision_cost": vision_cost,
-                        "total_cost": plan_cost + review_cost + total_cost + vision_cost
-                    }
+        step_time = time.time() - step_start_time
+
+        if not success:
+            print(f"  ✗ FAILED: {last_swarm_error}")
+            # Cleanup sandbox before returning
+            if sandbox:
+                try:
+                    sandbox.kill()
+                except:
+                    pass
+            return {
+                "success": False,
+                "error": f"Step {step.step_id} failed after {max_swarm_attempts} swarm attempts: {last_swarm_error}",
+                "final_answer": None,
+                "final_unit": None,
+                "state": state,
+                "plan": plan_obj,
+                "failed_at_step": step.step_id,
+                "total_time": time.time() - problem_start_time,
+                "plan_time": plan_time,
+                "review_time": review_time,
+                "execution_time": time.time() - execution_start_time,
+                "plan_cost": plan_cost,
+                "review_cost": review_cost,
+                "execution_cost": total_cost,
+                "vision_cost": vision_cost,
+                "total_cost": plan_cost + review_cost + total_cost + vision_cost
+            }
 
         # Update state - handle both single and multiple outputs
         if len(outputs) > 1:

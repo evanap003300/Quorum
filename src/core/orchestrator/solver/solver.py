@@ -14,7 +14,12 @@ from prompts.solver import (
     build_convert_prompt,
     build_observe_prompt,
 )
-from solver.execution import execute_with_llm, execute_with_llm_multi_output
+from solver.execution import (
+    execute_with_llm,
+    execute_with_llm_multi_output,
+    execute_with_llm_async,
+    execute_with_llm_multi_output_async,
+)
 from solver.parsing import validate_result
 from vision import analyze_observation, analyze_observation_multi
 
@@ -24,7 +29,7 @@ except ImportError:
     Sandbox = None
 
 
-def solve_step(step: Step, state: StateObject, sandbox: Optional["Sandbox"] = None, error_context: Optional[str] = None) -> Tuple[bool, Optional[Union[float, str, dict]], Optional[Union[str, dict]], Optional[str], float]:
+async def solve_step(step: Step, state: StateObject, sandbox: Optional["Sandbox"] = None, error_context: Optional[str] = None) -> Tuple[bool, Optional[Union[float, str, dict]], Optional[Union[str, dict]], Optional[str], float]:
     """
     Execute a single atomic step.
 
@@ -96,9 +101,9 @@ def solve_step(step: Step, state: StateObject, sandbox: Optional["Sandbox"] = No
         # NORMAL EXECUTION FOR EXTRACT/CALCULATE/CONVERT
         # Batch multi-output for extraction and calculation steps
         if is_multi_output and step.operation in ["extract", "calculate"]:
-            values, units, code, cost = execute_with_llm_multi_output(prompt, outputs, step, state, sandbox)
+            values, units, code, cost = await execute_with_llm_multi_output_async(prompt, outputs, step, state, sandbox)
         else:
-            value, unit, code, cost = execute_with_llm(prompt, sandbox)
+            value, unit, code, cost = await execute_with_llm_async(prompt, sandbox)
             values, units = value, unit
 
         return True, values, units, None, cost

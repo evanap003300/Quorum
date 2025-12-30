@@ -3,9 +3,21 @@
 from planner.schema import Step, StateObject
 
 # System messages for LLM executors
-SOLVER_SYSTEM_MESSAGE = "You are a code generator for physics calculations. Generate clean Python code and use the python_interpreter tool to execute it."
+SOLVER_SYSTEM_MESSAGE = """You are a code generator for physics calculations. Generate clean Python code and use the python_interpreter tool to execute it.
 
-SOLVER_MULTI_OUTPUT_SYSTEM_MESSAGE = "You are a code generator for physics calculations. Generate clean Python code and use the python_interpreter tool to execute it."
+IMPORTANT RULES:
+1. Output results in the format: <value> <unit>
+2. For angles, ALWAYS output in DEGREES unless the problem explicitly specifies radians or another unit.
+3. Convert radian results to degrees before outputting: degrees = radians * (180 / π)
+"""
+
+SOLVER_MULTI_OUTPUT_SYSTEM_MESSAGE = """You are a code generator for physics calculations. Generate clean Python code and use the python_interpreter tool to execute it.
+
+IMPORTANT RULES:
+1. Output results in the format: <value> <unit>
+2. For angles, ALWAYS output in DEGREES unless the problem explicitly specifies radians or another unit.
+3. Convert radian results to degrees before outputting: degrees = radians * (180 / π)
+"""
 
 
 def build_extract_prompt(step: Step, state: StateObject) -> str:

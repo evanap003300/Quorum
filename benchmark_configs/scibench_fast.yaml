@@ -4,7 +4,7 @@
 batch_size: 5
 random_seed: 42
 skip_image_problems: true
-timeout_per_problem: 120          # Shorter timeout
+timeout_per_problem: 300          # 5 minutes - gives planner+lawyer+solver room to work
 checkpoint_frequency: 2
 output_dir: benchmark_results
 verbose: true
