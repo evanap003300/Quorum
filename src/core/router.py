@@ -34,65 +34,20 @@ class ProblemClassification(BaseModel):
     key_indicators: list[str] = Field(description="Specific problem features that influenced classification")
 
 
-ROUTER_PROMPT = """You are a physics problem difficulty classifier. Analyze the given problem and classify it into one of three tiers:
+ROUTER_PROMPT = """Classify this physics problem as EASY, MEDIUM, or HARD. Output JSON only.
 
-## EASY Tier
-Problems that are:
-- Simple definitions or concept recall
-- One-step arithmetic or formula application
-- Direct unit conversions
-- Looking up standard constants
-- No derivation or multi-step reasoning needed
+Tiers:
+- EASY: Definitions, one-step formulas, unit conversion, recall
+- MEDIUM: Textbook level, 2-4 steps, familiar patterns, homework
+- HARD: Ambiguous, multi-step derivation, advanced topics (QM/GR), requires planning
 
-Examples:
-- "What is Newton's Second Law?"
-- "Convert 72 km/h to m/s"
-- "If F=ma, m=5kg, and a=2m/s², find F"
-- "What is the speed of light?"
+List key features (1-3 words each). Tag reasoning as one phrase.
 
-## MEDIUM Tier
-Problems that are:
-- Standard textbook level (AP Physics, Calculus I-II)
-- 2-4 clearly defined steps
-- Multiple equations but familiar patterns
-- Some algebra, basic calculus, or trigonometry
-- Typical homework problems with clear solution path
-- Solvable in 3-7 minutes by competent student
-
-Examples:
-- "A ball is thrown at 20 m/s at 45°. Find maximum height and range."
-- "Calculate equivalent resistance of three resistors (10Ω, 20Ω, 30Ω) in parallel"
-- "A 2kg mass on a spring oscillates with period 0.5s. Find spring constant."
-
-## HARD Tier
-Problems that are:
-- Advanced undergraduate or graduate level
-- Ambiguous problem statements requiring interpretation
-- Multi-page derivations or proofs
-- Multiple competing approaches needed
-- Requires strategic planning and breakdown
-- SciBench-level difficulty
-- Problems with complex diagrams requiring spatial reasoning
-- Advanced topics: quantum mechanics, relativity, statistical mechanics
-
-Examples:
-- "Derive partition function for a system of N non-interacting particles"
-- "Find electric field everywhere for uniformly charged disk of radius R"
-- Problems from physics olympiads or graduate qualifying exams
-
-## Classification Guidelines
-1. **Ambiguity**: If problem statement is ambiguous → HARD
-2. **Diagram dependency**: If understanding requires complex diagram → HARD
-3. **Calculation length**: If solution requires >4 distinct steps → HARD
-4. **Domain complexity**: Advanced physics (QM, GR, stat mech) → usually HARD
-5. **Confidence**: If borderline, err toward higher tier
-
-Respond with JSON matching this schema:
 {
-  "tier": "EASY" | "MEDIUM" | "HARD",
-  "confidence": <float 0-1>,
-  "reasoning": "<why this tier>",
-  "key_indicators": ["<indicator 1>", "<indicator 2>", ...]
+  "tier": "EASY"|"MEDIUM"|"HARD",
+  "confidence": <0-1>,
+  "reasoning": "<single-phrase>",
+  "key_indicators": ["feature1", "feature2"]
 }"""
 
 
@@ -125,8 +80,9 @@ def classify_problem(problem: str, image_path: Optional[str] = None) -> Tuple[Pr
         model = genai.GenerativeModel(
             model_name="gemini-3-flash-preview",
             generation_config={
-                "temperature": 0.1,
-                "response_mime_type": "application/json"
+                "temperature": 0.0,  # Deterministic output
+                "response_mime_type": "application/json",
+                "max_output_tokens": 150  # Force brevity (~5-10 tokens for reasoning + 2-5 for indicators)
             }
         )
 
