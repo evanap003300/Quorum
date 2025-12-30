@@ -3,3 +3,4 @@ project.md
 .venv
 __pycache__/
 .claude/
+benchmark_results/

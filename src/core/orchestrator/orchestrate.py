@@ -172,37 +172,56 @@ def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[s
         print(f"  Output: {output_info} ({expected_unit_info})")
 
         step_start_time = time.time()
-        # Solve this step (passing hot sandbox)
-        success, value, unit, error, cost = solve_step(step, state, sandbox)
-        step_time = time.time() - step_start_time
-        total_cost += cost
 
-        if not success:
-            print(f"  ✗ FAILED: {error}")
-            # Cleanup sandbox before returning
-            if sandbox:
-                try:
-                    sandbox.kill()
-                except:
-                    pass
-            return {
-                "success": False,
-                "error": f"Step {step.step_id} failed: {error}",
-                "final_answer": None,
-                "final_unit": None,
-                "state": state,
-                "plan": plan_obj,
-                "failed_at_step": step.step_id,
-                "total_time": time.time() - problem_start_time,
-                "plan_time": plan_time,
-                "review_time": review_time,
-                "execution_time": time.time() - execution_start_time,
-                "plan_cost": plan_cost,
-                "review_cost": review_cost,
-                "execution_cost": total_cost,
-                "vision_cost": vision_cost,
-                "total_cost": plan_cost + review_cost + total_cost + vision_cost
-            }
+        # SELF-CORRECTION LOOP: Try step execution with retry logic
+        max_step_retries = 2
+        step_attempt = 0
+        last_error = None
+
+        while step_attempt <= max_step_retries:
+            if step_attempt > 0:
+                print(f"  ↻ Retry {step_attempt}/{max_step_retries}: Attempting to fix error...")
+
+            # Solve this step (passing hot sandbox and error context if retrying)
+            error_context = last_error if step_attempt > 0 else None
+            success, value, unit, error, cost = solve_step(step, state, sandbox, error_context=error_context)
+            total_cost += cost
+
+            if success:
+                step_time = time.time() - step_start_time
+                if step_attempt > 0:
+                    print(f"  ✓ RECOVERED: Step succeeded after {step_attempt} retry attempt(s)")
+                break
+            else:
+                last_error = error
+                step_attempt += 1
+
+                if step_attempt > max_step_retries:
+                    print(f"  ✗ FAILED: {error}")
+                    # Cleanup sandbox before returning
+                    if sandbox:
+                        try:
+                            sandbox.kill()
+                        except:
+                            pass
+                    return {
+                        "success": False,
+                        "error": f"Step {step.step_id} failed after {max_step_retries + 1} attempts: {error}",
+                        "final_answer": None,
+                        "final_unit": None,
+                        "state": state,
+                        "plan": plan_obj,
+                        "failed_at_step": step.step_id,
+                        "total_time": time.time() - problem_start_time,
+                        "plan_time": plan_time,
+                        "review_time": review_time,
+                        "execution_time": time.time() - execution_start_time,
+                        "plan_cost": plan_cost,
+                        "review_cost": review_cost,
+                        "execution_cost": total_cost,
+                        "vision_cost": vision_cost,
+                        "total_cost": plan_cost + review_cost + total_cost + vision_cost
+                    }
 
         # Update state - handle both single and multiple outputs
         if len(outputs) > 1:

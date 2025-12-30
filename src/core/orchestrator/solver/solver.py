@@ -24,7 +24,7 @@ except ImportError:
     Sandbox = None
 
 
-def solve_step(step: Step, state: StateObject, sandbox: Optional["Sandbox"] = None) -> Tuple[bool, Optional[Union[float, str, dict]], Optional[Union[str, dict]], Optional[str], float]:
+def solve_step(step: Step, state: StateObject, sandbox: Optional["Sandbox"] = None, error_context: Optional[str] = None) -> Tuple[bool, Optional[Union[float, str, dict]], Optional[Union[str, dict]], Optional[str], float]:
     """
     Execute a single atomic step.
 
@@ -32,6 +32,7 @@ def solve_step(step: Step, state: StateObject, sandbox: Optional["Sandbox"] = No
         step: The step to execute
         state: Current problem state with variable values
         sandbox: Optional existing sandbox to reuse. If None, creates new sandbox per execution.
+        error_context: Optional error message from a previous failed attempt. If provided, will be prepended to the prompt to help agent correct the error.
 
     Returns:
         For single-output steps: Tuple of (success, value, unit, error_message, cost)
@@ -55,6 +56,10 @@ def solve_step(step: Step, state: StateObject, sandbox: Optional["Sandbox"] = No
             prompt = build_observe_prompt(step, state)
         else:
             return False, None, None, f"Unknown operation: {step.operation}", 0.0
+
+        # If retrying after an error, prepend error context to the prompt
+        if error_context:
+            prompt = f"PREVIOUS ATTEMPT FAILED WITH THIS ERROR:\n{error_context}\n\nPlease fix the error and try again:\n\n{prompt}"
 
         # Check if this is a multi-output extraction step
         outputs = step.get_outputs()
