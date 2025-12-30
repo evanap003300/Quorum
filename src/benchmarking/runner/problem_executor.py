@@ -241,7 +241,16 @@ class ProblemExecutor:
         Returns:
             Result dictionary from solve_problem
         """
-        from orchestrate import solve_problem
+        # Check environment variable to choose solver
+        use_single_agent = os.getenv("USE_SINGLE_AGENT", "false").lower() == "true"
+
+        if use_single_agent:
+            # Import single-agent solver
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../core'))
+            from single_agent.solver import solve_problem
+        else:
+            # Import multi-agent solver (default)
+            from orchestrate import solve_problem
 
         # On Unix systems, use signal.alarm for timeout
         if sys.platform != "win32":
