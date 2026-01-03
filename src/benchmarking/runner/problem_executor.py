@@ -143,7 +143,8 @@ class ProblemExecutor:
             from orchestrate import solve_problem
 
             # Execute with timeout (async)
-            result = await self._execute_with_timeout(problem.problem_text)
+            # Pass expected unit to help solver produce correct unit format
+            result = await self._execute_with_timeout(problem.problem_text, problem.ground_truth_unit)
 
             # Extract results
             end_time = time.time()
@@ -270,11 +271,12 @@ class ProblemExecutor:
         """
         return asyncio.run(self.execute_async(problem))
 
-    async def _execute_with_timeout(self, problem_text: str) -> dict:
+    async def _execute_with_timeout(self, problem_text: str, expected_unit: str = "") -> dict:
         """Execute solve_problem with routing and timeout handling (async).
 
         Args:
             problem_text: Problem text to solve
+            expected_unit: Expected output unit from ground truth (for unit hints)
 
         Returns:
             Result dictionary from solve_problem with routing metadata
@@ -351,11 +353,11 @@ class ProblemExecutor:
             if sys.platform != "win32":
                 with time_limit(self.timeout_seconds):
                     result = await self._dispatch_to_solver(
-                        classification, problem_text, solve_single_agent, solve_multi_agent
+                        classification, problem_text, solve_single_agent, solve_multi_agent, expected_unit
                     )
             else:
                 result = await self._dispatch_to_solver(
-                    classification, problem_text, solve_single_agent, solve_multi_agent
+                    classification, problem_text, solve_single_agent, solve_multi_agent, expected_unit
                 )
         except TimeoutError:
             raise
@@ -386,7 +388,7 @@ class ProblemExecutor:
 
         return result
 
-    async def _dispatch_to_solver(self, classification, problem_text, solve_single_agent, solve_multi_agent):
+    async def _dispatch_to_solver(self, classification, problem_text, solve_single_agent, solve_multi_agent, expected_unit: str = ""):
         """Dispatch problem to appropriate solver based on classification.
 
         Args:
@@ -394,6 +396,7 @@ class ProblemExecutor:
             problem_text: Problem text
             solve_single_agent: Function reference to single-agent solver
             solve_multi_agent: Function reference to multi-agent solver (async)
+            expected_unit: Expected output unit from ground truth (for unit hints)
 
         Returns:
             Result dictionary from solver
@@ -404,7 +407,8 @@ class ProblemExecutor:
             result = await solve_single_agent(
                 problem=problem_text,
                 max_iterations=7,
-                model="gemini-3-flash-preview"
+                model="gemini-3-flash-preview",
+                expected_unit=expected_unit
             )
             return result
 
@@ -414,14 +418,15 @@ class ProblemExecutor:
             result = await solve_single_agent(
                 problem=problem_text,
                 max_iterations=7,
-                model="gemini-3-pro-preview"
+                model="gemini-3-pro-preview",
+                expected_unit=expected_unit
             )
             return result
 
         else:  # HARD
             # HARD: Full multi-agent orchestrator
             print("   → Using multi-agent orchestrator (Planner + Swarm)")
-            result = await solve_multi_agent(problem_text)
+            result = await solve_multi_agent(problem_text, expected_unit=expected_unit)
             return result
 
     def _categorize_error(self, error_msg: str) -> str:

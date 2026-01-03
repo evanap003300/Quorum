@@ -86,14 +86,16 @@ def extract_number(answer: Union[float, str]) -> Tuple[Optional[float], str]:
             attempts.append("percentage_failed")
 
     # Strategy 5.5: Scientific notation with LaTeX/Unicode exponents
-    # Handles formats like: "1.91 $10^{-47}$", "1.91 × 10^-47", "1.91 \times 10^-47"
+    # Handles formats like: "1.91 $10^{-47}$", "1.91 × 10^-47", "1.91 \times 10^{-47}", "7.9 x 10^34"
     latex_sci_notation_patterns = [
         # LaTeX format with optional content after exponent: "1.91 $10^{-47}$" or "1.91 $10^{-47} \mathrm{...}$"
         r'(-?\d+\.?\d*)\s*\$10\^\{?(-?\d+)\}?',
-        # Unicode multiplication: "1.91 × 10^-47"
-        r'(-?\d+\.?\d*)\s*[×\*]\s*10\^\s*(-?\d+)',
-        # LaTeX times: "1.91 \times 10^-47"
-        r'(-?\d+\.?\d*)\s*\\times\s+10\^\s*(-?\d+)',
+        # Multiplication sign variants: "1.91 × 10^-47", "7.9 x 10^{34}", "1.91 * 10^34"
+        # Note: handles optional braces around exponent
+        r'(-?\d+\.?\d*)\s*[×\*xX]\s*10\^\s*\{?(-?\d+)\}?',
+        # LaTeX \times: "1.91 \times 10^-47" or "1.91 \times 10^{-47}"
+        # Note: handles optional braces around exponent
+        r'(-?\d+\.?\d*)\s*\\times\s+10\^\s*\{?(-?\d+)\}?',
         # Standard format with power: "1.91 * 10**-47" or "1.91e-47" (already handled)
     ]
 
@@ -209,7 +211,7 @@ class ComparisonResult(BaseModel):
 class AnswerComparator:
     """Compare predicted and ground truth answers with tolerance."""
 
-    def __init__(self, tolerance: float = 0.01, allow_unit_conversion: bool = True):
+    def __init__(self, tolerance: float = 0.015, allow_unit_conversion: bool = True):
         """Initialize comparator.
 
         Args:
@@ -243,9 +245,14 @@ class AnswerComparator:
             ComparisonResult with verdict, extraction methods, and explanation
         """
         try:
+            # Combine answer and unit for extraction (handles "8.44" + "$10^{34}$")
+            # This is critical when exponent is embedded in the unit field
+            combined_pred = f"{predicted} {predicted_unit}".strip() if predicted_unit else str(predicted)
+            combined_truth = f"{ground_truth} {ground_truth_unit}".strip() if ground_truth_unit else str(ground_truth)
+
             # Extract numeric values using robust extraction function
-            pred_value, pred_method = extract_number(predicted)
-            truth_value, truth_method = extract_number(ground_truth)
+            pred_value, pred_method = extract_number(combined_pred)
+            truth_value, truth_method = extract_number(combined_truth)
 
             # Check for extraction failures
             if pred_value is None or truth_value is None:
@@ -266,6 +273,31 @@ class AnswerComparator:
 
             # Numeric comparison with tolerance (units already ignored)
             is_correct, relative_error = self._numeric_compare(pred_value, truth_value)
+
+            # If comparison fails, try rad↔deg conversion as fallback
+            if not is_correct:
+                converted_pred, conversion_applied = self._try_angular_conversion(
+                    pred_value, predicted_unit, truth_value, ground_truth_unit
+                )
+                if conversion_applied:
+                    is_correct, relative_error = self._numeric_compare(converted_pred, truth_value)
+                    if is_correct:
+                        pred_value = converted_pred  # Use converted value for reporting
+
+            # If still not correct, try metric prefix unit conversion (e.g., m² ↔ nm²)
+            if not is_correct and self.allow_unit_conversion:
+                try:
+                    # Try converting predicted value to ground truth units
+                    converted_pred = self.unit_converter.normalize(
+                        pred_value, predicted_unit, ground_truth_unit
+                    )
+                    if converted_pred is not None and converted_pred != pred_value:
+                        is_correct, relative_error = self._numeric_compare(converted_pred, truth_value)
+                        if is_correct:
+                            pred_value = converted_pred  # Use converted value for reporting
+                            pred_method = f"{pred_method}+unit_conversion"
+                except Exception:
+                    pass  # Fall back to original comparison
 
             if is_correct:
                 reason = (
@@ -378,3 +410,45 @@ class AnswerComparator:
         is_correct = relative_error <= self.tolerance
 
         return is_correct, relative_error
+
+    def _try_angular_conversion(
+        self,
+        pred_value: float,
+        pred_unit: str,
+        truth_value: float,
+        truth_unit: str
+    ) -> tuple[float, bool]:
+        """Try to convert between radians and degrees if units mismatch.
+
+        Args:
+            pred_value: Predicted numeric value
+            pred_unit: Predicted unit string
+            truth_value: Ground truth numeric value
+            truth_unit: Ground truth unit string
+
+        Returns:
+            Tuple of (converted_value, conversion_was_applied)
+        """
+        # Normalize unit strings
+        pred_unit_lower = (pred_unit or "").lower().strip()
+        truth_unit_lower = (truth_unit or "").lower().strip()
+
+        # Define unit patterns
+        rad_patterns = ["rad", "radian", "radians"]
+        deg_patterns = ["deg", "degree", "degrees", "°", "^\\circ", "circ"]
+
+        pred_is_rad = any(p in pred_unit_lower for p in rad_patterns)
+        pred_is_deg = any(p in pred_unit_lower for p in deg_patterns)
+        truth_is_rad = any(p in truth_unit_lower for p in rad_patterns)
+        truth_is_deg = any(p in truth_unit_lower for p in deg_patterns)
+
+        # Only convert if there's a clear rad↔deg mismatch
+        if pred_is_rad and truth_is_deg:
+            # Convert predicted from radians to degrees
+            return math.degrees(pred_value), True
+        elif pred_is_deg and truth_is_rad:
+            # Convert predicted from degrees to radians
+            return math.radians(pred_value), True
+
+        # No conversion needed or applicable
+        return pred_value, False

@@ -24,6 +24,13 @@ try:
 except ImportError:
     Sandbox = None
 
+try:
+    import sympy
+    import math
+    SYMPY_AVAILABLE = True
+except ImportError:
+    SYMPY_AVAILABLE = False
+
 # Import code interpreter
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'orchestrator'))
 from tools.evaluation.code_interpreter import run as run_python_impl
@@ -80,11 +87,16 @@ When solving a problem, follow these steps:
    - Print intermediate results to verify correctness
    - Always use proper units throughout
 
-4. **VERIFY**: Check your final answer:
+4. **VERIFY** (CRITICAL - Do this BEFORE giving your final answer):
+   - **SIGN CHECK** (most common error!):
+     * For thermodynamics: Is work done BY or ON the system? BY = positive, ON = negative
+     * For heat: Is heat absorbed or released? Absorbed = positive, Released = negative
+     * For enthalpy/entropy changes: Exothermic = negative ΔH, Endothermic = positive ΔH
+     * Double-check: Does your sign match the physical situation described?
    - Are the units correct and consistent?
    - Is the magnitude reasonable (not wildly off)?
    - Does the answer address what was asked?
-   - Have you handled all special cases?
+   - Print "SIGN CHECK: [positive/negative] because [reason]" before final answer
 
 ## Tool Usage Guidelines
 
@@ -148,6 +160,22 @@ print(f"Final velocity: {v} m/s")
    - Examine the error
    - Try a different approach
    - Iterate until you find a solution
+
+7. **SIGN CONVENTIONS ARE CRITICAL**: Pay close attention to signs, especially in:
+   - **Thermodynamics**:
+     * Work done BY the system is positive, work done ON the system is negative
+     * Heat absorbed is positive, heat released is negative
+     * ΔU = Q - W (or Q + W depending on convention - check the problem)
+   - **Mechanics**:
+     * Displacement, velocity, acceleration have direction - check coordinate system
+     * Potential energy: define the zero reference point
+   - **Electromagnetism**:
+     * Charge signs matter for force direction
+     * Current direction affects magnetic field
+   - **General**:
+     * ALWAYS state your sign convention explicitly
+     * Double-check if the answer should be negative or positive
+     * A positive answer when negative is expected (or vice versa) is WRONG
 
 ## Examples
 
@@ -240,6 +268,105 @@ def _calculate_cost(
     return ((input_tokens * pricing["input"]) + (output_tokens * pricing["output"])) / 1_000_000
 
 
+def _clean_latex_to_sympy(expr_str: str) -> str:
+    """Convert LaTeX math notation to sympy-compatible syntax.
+
+    Args:
+        expr_str: LaTeX expression string
+
+    Returns:
+        Cleaned string compatible with sympy.sympify
+    """
+    cleaned = expr_str.strip()
+
+    # Remove LaTeX dollar signs and display math markers
+    cleaned = re.sub(r'^\$+|\$+$', '', cleaned)
+    cleaned = re.sub(r'^\\[|\]$', '', cleaned)
+
+    # Convert LaTeX fractions: \frac{num}{denom} -> (num)/(denom)
+    while r'\frac' in cleaned:
+        # Match \frac{...}{...} handling nested braces
+        frac_match = re.search(r'\\frac\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}', cleaned)
+        if frac_match:
+            num, denom = frac_match.groups()
+            replacement = f'(({num})/({denom}))'
+            cleaned = cleaned[:frac_match.start()] + replacement + cleaned[frac_match.end():]
+        else:
+            break
+
+    # Convert LaTeX square roots: \sqrt{x} -> sqrt(x)
+    cleaned = re.sub(r'\\sqrt\{([^{}]+)\}', r'sqrt(\1)', cleaned)
+
+    # Convert LaTeX trig functions
+    cleaned = cleaned.replace(r'\arccos', 'acos')
+    cleaned = cleaned.replace(r'\arcsin', 'asin')
+    cleaned = cleaned.replace(r'\arctan', 'atan')
+    cleaned = cleaned.replace(r'\cos', 'cos')
+    cleaned = cleaned.replace(r'\sin', 'sin')
+    cleaned = cleaned.replace(r'\tan', 'tan')
+    cleaned = cleaned.replace(r'\exp', 'exp')
+    cleaned = cleaned.replace(r'\ln', 'log')
+    cleaned = cleaned.replace(r'\log', 'log')
+
+    # Convert LaTeX constants
+    cleaned = cleaned.replace(r'\pi', 'pi')
+    cleaned = cleaned.replace(r'\Pi', 'pi')
+
+    # Convert LaTeX multiplication (implied or explicit)
+    cleaned = cleaned.replace(r'\times', '*')
+    cleaned = cleaned.replace(r'\cdot', '*')
+
+    # Remove remaining backslashes from LaTeX commands
+    cleaned = re.sub(r'\\mathrm\{([^}]*)\}', r'\1', cleaned)
+    cleaned = re.sub(r'\\text\{([^}]*)\}', r'\1', cleaned)
+
+    # Plain text conversions (non-LaTeX)
+    cleaned = cleaned.replace('arcsin', 'asin')
+    cleaned = cleaned.replace('arccos', 'acos')
+    cleaned = cleaned.replace('arctan', 'atan')
+    cleaned = cleaned.replace('ln(', 'log(')
+
+    return cleaned
+
+
+def _evaluate_symbolic(expr_str: str) -> Optional[float]:
+    """Try to evaluate a symbolic expression to a numeric value.
+
+    Handles expressions like:
+    - Trigonometric: sin(x), cos(x), tan(x), asin(x), acos(x), atan(x)
+    - Roots: sqrt(x), cbrt(x), x**(1/n)
+    - Exponentials: exp(x), e**x, 10**x
+    - Logarithms: log(x), ln(x), log10(x)
+    - Constants: pi, e
+    - Fractions: 1/2, 3/4, sqrt(2)/2
+    - Combinations: acos(2/3), sqrt(3)/2
+    - LaTeX: \\frac{a}{b}, \\sqrt{x}, \\arccos(x), \\pi
+
+    Args:
+        expr_str: String representation of expression (may be LaTeX)
+
+    Returns:
+        Numeric value if evaluation succeeds, None otherwise
+    """
+    if not SYMPY_AVAILABLE:
+        return None
+
+    try:
+        # Clean LaTeX to sympy-compatible format
+        cleaned = _clean_latex_to_sympy(expr_str)
+
+        # Parse and evaluate the expression
+        expr = sympy.sympify(cleaned)
+        result = float(expr.evalf())
+
+        # Check for invalid results
+        if math.isnan(result) or math.isinf(result):
+            return None
+        return result
+    except Exception:
+        return None
+
+
 def _extract_answer(response: str) -> Tuple[Union[float, str], str]:
     """Extract final answer and unit from agent response.
 
@@ -252,24 +379,56 @@ def _extract_answer(response: str) -> Tuple[Union[float, str], str]:
     Raises:
         ValueError: If no valid answer found
     """
-    # Look for "ANSWER: <value> <unit>" pattern
-    pattern = r'ANSWER:\s*([^\s]+)\s+(.+?)(?:\n|$)'
-    match = re.search(pattern, response, re.IGNORECASE)
+    # Multiple patterns in priority order (most specific first)
+    patterns = [
+        # LaTeX fraction with possible unit: ANSWER: \frac{...}{...} unit
+        # Uses balanced brace matching for nested expressions
+        r'ANSWER:\s*(\\frac\{(?:[^{}]|\{[^{}]*\})*\}\{(?:[^{}]|\{[^{}]*\})*\})(?:\s+([^\n]*))?',
+        # LaTeX trig functions: ANSWER: \arccos(...) or similar
+        r'ANSWER:\s*(\\(?:arc)?(?:cos|sin|tan)\([^)]+\))(?:\s+([^\n]*))?',
+        # LaTeX with \times scientific notation: ANSWER: 1.92 \times 10^{-47} unit
+        r'ANSWER:\s*(-?[\d.]+\s*\\times\s*10\^\{?-?\d+\}?)(?:\s+([^\n]*))?',
+        # ANSWER: -5.5e-10 m/s (with unit)
+        r'ANSWER:\s*(-?[\d.]+(?:e[+-]?\d+)?)\s+([^\n]+)',
+        # ANSWER: -5.5e-10 (no unit, at end of line or response)
+        r'ANSWER:\s*(-?[\d.]+(?:e[+-]?\d+)?)\s*(?:\n|$)',
+        # ANSWER: symbolic_expr unit (like "m*v/F J") - be more careful with LaTeX
+        r'ANSWER:\s*([^\s\\]+)\s+([^\n]+)',
+        # ANSWER: LaTeX expression (capture until end of line for complex LaTeX)
+        r'ANSWER:\s*(\\[^\n]+?)(?:\s*$|\s+(?=[A-Za-z]{2,}))',
+        # ANSWER: value (just value, no unit)
+        r'ANSWER:\s*([^\s\n]+)',
+        # Natural language fallbacks
+        r'(?:final answer|the answer is|result)[:\s]+(-?[\d.]+(?:e[+-]?\d+)?)',
+    ]
 
-    if not match:
-        raise ValueError(f"Could not find ANSWER in response:\n{response}")
+    for i, pattern in enumerate(patterns):
+        match = re.search(pattern, response, re.IGNORECASE | re.MULTILINE)
+        if match:
+            value_str = match.group(1).strip()
+            # Get unit if captured (patterns 0, 2 have unit in group 2)
+            unit = match.group(2).strip() if match.lastindex >= 2 else ""
 
-    value_str = match.group(1).strip()
-    unit = match.group(2).strip()
+            # Try to parse as float
+            try:
+                value = float(value_str)
+            except ValueError:
+                # Try symbolic evaluation (e.g., "acos(2/3)", "sqrt(2)/2")
+                symbolic_value = _evaluate_symbolic(value_str)
+                if symbolic_value is not None:
+                    value = symbolic_value
+                else:
+                    # Keep as string expression (e.g., "m*v/(F+mg)")
+                    value = value_str
 
-    # Try to parse as float, otherwise keep as symbolic expression
-    try:
-        value = float(value_str)
-    except ValueError:
-        # Symbolic expression (e.g., "m*v/(F+mg)")
-        value = value_str
+            return value, unit
 
-    return value, unit
+    # Fallback: Find last number in the response
+    numbers = re.findall(r'-?[\d.]+(?:e[+-]?\d+)?', response)
+    if numbers:
+        return float(numbers[-1]), ""
+
+    raise ValueError(f"Could not find ANSWER in response:\n{response[-500:]}")
 
 
 async def _run_agent_loop(
@@ -366,8 +525,22 @@ async def _run_agent_loop(
                         continue
 
             # No more tool calls - agent finished with text response
-            if response.text:
-                return response.text, code_executed, total_cost
+            # Wrap in try/except since response.text can fail if response contains function_call
+            try:
+                response_text = response.text
+                if response_text:
+                    return response_text, code_executed, total_cost
+            except ValueError as text_error:
+                # Handle case where response contains function_call that can't be converted to text
+                # Try to extract text from individual parts
+                text_parts = []
+                for part in response.candidates[0].content.parts:
+                    if hasattr(part, 'text') and part.text:
+                        text_parts.append(part.text)
+                if text_parts:
+                    return "\n".join(text_parts), code_executed, total_cost
+                # No text found - this shouldn't happen but handle gracefully
+                return f"Response contained no extractable text: {str(text_error)}", code_executed, total_cost
 
         except Exception as e:
             error_msg = f"Error in agent loop: {str(e)}"
@@ -385,6 +558,7 @@ async def solve_problem(
     timeout: int = 120,
     sandbox: Optional["Sandbox"] = None,
     model: str = "gemini-3-pro-preview",
+    expected_unit: str = "",
 ) -> Dict[str, Any]:
     """Solve a physics/math problem using single-agent Gemini approach.
 
@@ -394,6 +568,7 @@ async def solve_problem(
         timeout: Timeout in seconds (currently unused, for API compatibility)
         sandbox: Optional pre-initialized sandbox for code execution
         model: Model name to use (default: gemini-3-pro-preview)
+        expected_unit: Expected output unit from ground truth (for unit hints)
 
     Returns:
         Result dict with keys:
@@ -408,6 +583,10 @@ async def solve_problem(
         - error: Optional[str] - Error message if any
     """
     start_time = time.time()
+
+    # Add expected unit hint to problem if provided
+    if expected_unit:
+        problem = f"{problem}\n\nIMPORTANT: Express your final answer in the unit: {expected_unit}"
 
     # Validate inputs
     if not problem:

@@ -34,14 +34,21 @@ class ProblemClassification(BaseModel):
     key_indicators: list[str] = Field(description="Specific problem features that influenced classification")
 
 
-ROUTER_PROMPT = """Classify this physics problem as EASY, MEDIUM, or HARD. Output JSON only.
+ROUTER_PROMPT = """Classify this physics/chemistry/math problem difficulty. Output JSON only.
 
 Tiers:
-- EASY: Definitions, one-step formulas, unit conversion, recall
-- MEDIUM: Textbook level, 2-4 steps, familiar patterns, homework
-- HARD: Ambiguous, multi-step derivation, advanced topics (QM/GR), requires planning
+- EASY: Simple recall, single formula, unit conversion (e.g., "What is F=ma?", "Convert 72 km/h to m/s")
+- MEDIUM: Standard textbook, 2-3 steps, explicit values given, familiar patterns
+- HARD: Classify as HARD if ANY of these apply:
+  * Thermodynamics (heat, work, entropy, enthalpy) - sign conventions are tricky
+  * Multi-step derivation (4+ steps)
+  * Requires choosing between approaches
+  * Implicit constraints or approximations
+  * Quantum mechanics, statistical mechanics, relativity
+  * Problem says "derive", "show that", "prove"
+  * Symbolic answer expected
 
-List key features (1-3 words each). Tag reasoning as one phrase.
+When in doubt between MEDIUM and HARD, choose HARD.
 
 {
   "tier": "EASY"|"MEDIUM"|"HARD",
@@ -77,20 +84,32 @@ def classify_problem(problem: str, image_path: Optional[str] = None) -> Tuple[Pr
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
         # Use Flash model for fast, cheap classification
+        # Note: Removed response_mime_type as it may cause empty responses
         model = genai.GenerativeModel(
-            model_name="gemini-3-flash-preview",
+            model_name="gemini-2.0-flash",
             generation_config={
                 "temperature": 0.0,  # Deterministic output
-                "response_mime_type": "application/json",
-                "max_output_tokens": 150  # Force brevity (~5-10 tokens for reasoning + 2-5 for indicators)
+                "max_output_tokens": 200  # Allow some flexibility
             }
         )
 
         # Generate classification
         response = model.generate_content([ROUTER_PROMPT, f"\n\nProblem:\n{problem}"])
 
-        # Parse structured output
-        result_json = json.loads(response.text)
+        # Validate response before parsing
+        response_text = response.text if response.text else ""
+        if not response_text.strip():
+            raise ValueError(f"Empty response from router. Candidates: {response.candidates}")
+
+        # Extract JSON from response (may have markdown code blocks or extra text)
+        import re
+        json_match = re.search(r'\{[^{}]*"tier"[^{}]*\}', response_text, re.DOTALL)
+        if json_match:
+            result_json = json.loads(json_match.group())
+        else:
+            # Try parsing the whole response as JSON
+            result_json = json.loads(response_text)
+
         classification = ProblemClassification(**result_json)
 
         # Calculate cost
@@ -99,9 +118,10 @@ def classify_problem(problem: str, image_path: Optional[str] = None) -> Tuple[Pr
         output_tokens = usage.candidates_token_count
 
         cost = 0.0
-        if "gemini-3-flash-preview" in MODEL_PRICING:
-            pricing = MODEL_PRICING["gemini-3-flash-preview"]
-            cost = ((input_tokens * pricing["input"]) + (output_tokens * pricing["output"])) / 1_000_000
+        # Check for flash pricing (try multiple model name formats)
+        flash_pricing = MODEL_PRICING.get("gemini-2.0-flash") or MODEL_PRICING.get("gemini-3-flash-preview")
+        if flash_pricing:
+            cost = ((input_tokens * flash_pricing["input"]) + (output_tokens * flash_pricing["output"])) / 1_000_000
 
         return classification, cost
 

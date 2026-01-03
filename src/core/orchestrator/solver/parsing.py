@@ -6,6 +6,26 @@ from planner.schema import Step, StateObject
 from config.pricing import MODEL_PRICING
 
 
+def _safe_parse_float(text: str) -> Optional[float]:
+    """Safely parse float, returning None for invalid inputs.
+
+    Handles edge cases like '.', '-', '+', 'None', empty strings that
+    would cause float() to raise ValueError.
+
+    Args:
+        text: String to parse as float
+
+    Returns:
+        Float value if parsing succeeds, None otherwise
+    """
+    if not text or text.strip() in ('.', '-', '+', 'None', 'null', '', 'nan', 'NaN'):
+        return None
+    try:
+        return float(text.strip())
+    except (ValueError, TypeError):
+        return None
+
+
 def calculate_cost(completion, model: str) -> float:
     """
     Calculate the cost of a completion based on input/output tokens.
@@ -77,6 +97,46 @@ def extract_result_from_text(text: str) -> Optional[str]:
     return None
 
 
+def is_execution_error(output: str) -> bool:
+    """
+    Check if output is an execution error message rather than a valid result.
+
+    Args:
+        output: The output string to check
+
+    Returns:
+        True if output appears to be an error message
+    """
+    if not output:
+        return False
+
+    output_lower = output.lower()
+
+    # Python exception patterns
+    error_patterns = [
+        'syntaxerror',
+        'indentationerror',
+        'nameerror',
+        'typeerror',
+        'valueerror',
+        'keyerror',
+        'indexerror',
+        'attributeerror',
+        'zerodivisionerror',
+        'runtimeerror',
+        'error:',
+        'traceback (most recent call last)',
+        'file "<string>"',
+        'problematic line:',
+    ]
+
+    for pattern in error_patterns:
+        if pattern in output_lower:
+            return True
+
+    return False
+
+
 def parse_output(output: str) -> Tuple[Union[float, str], str]:
     """
     Parse execution output to extract value and unit.
@@ -92,6 +152,10 @@ def parse_output(output: str) -> Tuple[Union[float, str], str]:
 
     output = output.strip()
 
+    # CRITICAL: Check if output is an error message
+    if is_execution_error(output):
+        raise ValueError(f"Code execution error: {output[:200]}")
+
     # CRITICAL: Reject malformed outputs containing code fences
     if output.startswith('```') or output.startswith('~~~'):
         raise ValueError(f"Output is malformed code block: {output[:50]}")
@@ -103,15 +167,14 @@ def parse_output(output: str) -> Tuple[Union[float, str], str]:
 
     if len(parts) < 2:
         # Try to parse as just a number
-        try:
-            value = float(parts[0])
+        value = _safe_parse_float(parts[0])
+        if value is not None:
             return value, "dimensionless"
-        except ValueError:
-            # Not a number, treat as symbolic
-            # But reject if it looks like a language tag
-            if parts[0] in ('python', 'java', 'c', 'cpp', 'rust', 'go', 'javascript'):
-                raise ValueError(f"Output appears to be code language tag: {parts[0]}")
-            return parts[0], "dimensionless"
+        # Not a number, treat as symbolic
+        # But reject if it looks like a language tag
+        if parts[0] in ('python', 'java', 'c', 'cpp', 'rust', 'go', 'javascript'):
+            raise ValueError(f"Output appears to be code language tag: {parts[0]}")
+        return parts[0], "dimensionless"
 
     first_token = parts[0]
     unit = parts[1].strip()
@@ -120,16 +183,15 @@ def parse_output(output: str) -> Tuple[Union[float, str], str]:
     if unit in ('python', 'java', 'c', 'cpp', 'rust') or unit.startswith('```'):
         raise ValueError(f"Malformed unit: {unit}")
 
-    try:
-        # Try to parse as numeric
-        value = float(first_token)
+    # Try to parse as numeric using safe parser
+    value = _safe_parse_float(first_token)
+    if value is not None:
         return value, unit
-    except ValueError:
-        # Not a number, treat as symbolic expression
-        # Validate it's not malformed
-        if first_token.startswith('```') or first_token in ('python', 'import', 'def'):
-            raise ValueError(f"Output appears to be code, not expression: {first_token}")
-        return first_token, unit
+    # Not a number, treat as symbolic expression
+    # Validate it's not malformed
+    if first_token.startswith('```') or first_token in ('python', 'import', 'def'):
+        raise ValueError(f"Output appears to be code, not expression: {first_token}")
+    return first_token, unit
 
 
 def validate_result(value: Union[float, str], unit: str, step: Step, state: StateObject) -> Tuple[bool, Optional[str]]:
@@ -191,11 +253,15 @@ def parse_json_output(output: str) -> Tuple[dict, dict]:
         - units_dict: {var_name: unit, ...}
 
     Raises:
-        ValueError: If output is not valid JSON
+        ValueError: If output is not valid JSON or is an execution error
     """
     import json
 
     output = output.strip()
+
+    # CRITICAL: Check if output is an error message
+    if is_execution_error(output):
+        raise ValueError(f"Code execution error: {output[:200]}")
 
     # Parse JSON
     try:
@@ -228,11 +294,10 @@ def parse_json_output(output: str) -> Tuple[dict, dict]:
             value_text = parts[0] if parts else ""
             unit = "dimensionless"
 
-        # Try to parse value as float, otherwise treat as symbolic
-        try:
-            value = float(value_text)
-        except ValueError:
-            value = value_text
+        # Try to parse value as float using safe parser, otherwise treat as symbolic
+        value = _safe_parse_float(value_text)
+        if value is None:
+            value = value_text  # Keep as string for symbolic values
 
         values_dict[var_name] = value
         units_dict[var_name] = unit
@@ -254,7 +319,14 @@ def parse_multi_output(output: str, var_names: List[str]) -> Tuple[dict, dict]:
         Tuple of (values_dict, units_dict)
         - values_dict: {var_name: value, ...} where value is float or str
         - units_dict: {var_name: unit, ...}
+
+    Raises:
+        ValueError: If output is an execution error
     """
+    # CRITICAL: Check if output is an error message
+    if is_execution_error(output):
+        raise ValueError(f"Code execution error: {output[:200]}")
+
     values_dict = {}
     units_dict = {}
 
@@ -297,10 +369,9 @@ def parse_multi_output(output: str, var_names: List[str]) -> Tuple[dict, dict]:
             value_str = parts[1]
             unit = parts[2]
 
-        # Try to parse value as float, otherwise treat as string (symbolic)
-        try:
-            value = float(value_str)
-        except ValueError:
+        # Try to parse value as float using safe parser, otherwise treat as string (symbolic)
+        value = _safe_parse_float(value_str)
+        if value is None:
             # Not a number, treat as symbolic expression
             value = value_str
 

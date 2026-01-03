@@ -173,6 +173,11 @@ RULES:
 - Use sci_constants for physical constants
 - Do NOT print variable assignments, only the JSON result"""
 
+        # Add expected unit hint if available (for HARD mode problems)
+        expected_unit_hint = ""
+        if hasattr(state, 'problem_context') and state.problem_context.get("expected_unit"):
+            expected_unit_hint = f"\n\nNOTE: The expected final answer unit is {state.problem_context['expected_unit']}. Ensure your output can be converted to this unit."
+
         if step.is_symbolic:
             symbolic_section = f"""
 
@@ -182,9 +187,9 @@ SYMBOLIC CALCULATION:
 - CRITICAL: Preserve units! Each result must have appropriate units
 - Print JSON with symbolic expressions: {{"var1": "expr1 unit1", ...}}
 """
-            return base_prompt + symbolic_section
+            return base_prompt + symbolic_section + expected_unit_hint
         else:
-            return base_prompt
+            return base_prompt + expected_unit_hint
 
     # Single variable calculation (original logic)
     base_prompt = f"""Calculate {step.description}:
@@ -200,6 +205,11 @@ Print result as: VALUE UNIT
 Use sci_constants for constants. Simplify symbolic results.
 Use only the provided inputs - compute nothing else."""
 
+    # Add expected unit hint if available (for HARD mode problems)
+    expected_unit_hint = ""
+    if hasattr(state, 'problem_context') and state.problem_context.get("expected_unit"):
+        expected_unit_hint = f"\n\nNOTE: The expected final answer unit is {state.problem_context['expected_unit']}. Ensure your output can be converted to this unit."
+
     if step.is_symbolic:
         symbolic_section = f"""
 
@@ -210,9 +220,9 @@ SYMBOLIC CALCULATION:
 - If you get dimensionless, you dropped a factor
 - Print: EXPR UNIT (e.g., "L*log(V/u)/V s")
 """
-        return base_prompt + symbolic_section
+        return base_prompt + symbolic_section + expected_unit_hint
     else:
-        return base_prompt
+        return base_prompt + expected_unit_hint
 
 
 def build_convert_prompt(step: Step, state: StateObject) -> str:

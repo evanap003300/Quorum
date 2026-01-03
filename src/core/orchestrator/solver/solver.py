@@ -99,8 +99,8 @@ async def solve_step(step: Step, state: StateObject, sandbox: Optional["Sandbox"
                 return False, None, None, f"OBSERVE operation failed: {type(e).__name__}: {str(e)}", 0.0
 
         # NORMAL EXECUTION FOR EXTRACT/CALCULATE/CONVERT
-        # Batch multi-output for extraction and calculation steps
-        if is_multi_output and step.operation in ["extract", "calculate"]:
+        # Batch multi-output for extraction, calculation, and convert steps
+        if is_multi_output and step.operation in ["extract", "calculate", "convert"]:
             values, units, code, cost = await execute_with_llm_multi_output_async(prompt, outputs, step, state, sandbox)
         else:
             value, unit, code, cost = await execute_with_llm_async(prompt, sandbox)

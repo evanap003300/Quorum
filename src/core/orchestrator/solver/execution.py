@@ -308,10 +308,15 @@ def execute_with_llm_multi_output(prompt: str, outputs: List[str], step: Step, s
     if output.strip().startswith('{') and output.strip().endswith('}'):
         try:
             values_dict, units_dict = parse_json_output(output)
+            # Validate that JSON has all required keys (not just non-None values)
+            missing_keys = [v for v in outputs if v not in values_dict]
+            if missing_keys:
+                parse_error = f"JSON missing required keys: {missing_keys}"
+                values_dict = None  # Force fallback to multi-line parsing
         except Exception as e:
             parse_error = f"JSON parsing failed: {str(e)}"
 
-    # Fall back to multi-line parsing if JSON failed or wasn't JSON
+    # Fall back to multi-line parsing if JSON failed or was incomplete
     if values_dict is None:
         try:
             values_dict, units_dict = parse_multi_output(output, outputs)
@@ -324,10 +329,10 @@ def execute_with_llm_multi_output(prompt: str, outputs: List[str], step: Step, s
     if values_dict is None:
         raise ValueError(f"Could not parse output. {parse_error}\nRaw output:\n{output}")
 
-    # Validate that all expected variables were parsed
-    missing_vars = [v for v in outputs if values_dict.get(v) is None]
+    # Validate that all expected variables were parsed (check both missing keys and None values)
+    missing_vars = [v for v in outputs if v not in values_dict or values_dict.get(v) is None]
     if missing_vars:
-        raise ValueError(f"Failed to extract: {missing_vars}. Output:\n{output}")
+        raise ValueError(f"Failed to extract required variables: {missing_vars}. Got keys: {list(values_dict.keys())}. Output:\n{output}")
 
     return values_dict, units_dict, code, total_cost
 
@@ -553,10 +558,15 @@ async def execute_with_llm_multi_output_async(prompt: str, outputs: List[str], s
     if output.strip().startswith('{') and output.strip().endswith('}'):
         try:
             values_dict, units_dict = parse_json_output(output)
+            # Validate that JSON has all required keys (not just non-None values)
+            missing_keys = [v for v in outputs if v not in values_dict]
+            if missing_keys:
+                parse_error = f"JSON missing required keys: {missing_keys}"
+                values_dict = None  # Force fallback to multi-line parsing
         except Exception as e:
             parse_error = f"JSON parsing failed: {str(e)}"
 
-    # Fall back to multi-line parsing if JSON failed or wasn't JSON
+    # Fall back to multi-line parsing if JSON failed or was incomplete
     if values_dict is None:
         try:
             values_dict, units_dict = parse_multi_output(output, outputs)
@@ -569,9 +579,9 @@ async def execute_with_llm_multi_output_async(prompt: str, outputs: List[str], s
     if values_dict is None:
         raise ValueError(f"Could not parse output. {parse_error}\nRaw output:\n{output}")
 
-    # Validate that all expected variables were parsed
-    missing_vars = [v for v in outputs if values_dict.get(v) is None]
+    # Validate that all expected variables were parsed (check both missing keys and None values)
+    missing_vars = [v for v in outputs if v not in values_dict or values_dict.get(v) is None]
     if missing_vars:
-        raise ValueError(f"Failed to extract: {missing_vars}. Output:\n{output}")
+        raise ValueError(f"Failed to extract required variables: {missing_vars}. Got keys: {list(values_dict.keys())}. Output:\n{output}")
 
     return values_dict, units_dict, code, total_cost

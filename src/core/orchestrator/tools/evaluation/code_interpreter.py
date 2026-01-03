@@ -120,6 +120,20 @@ async def run_local(code: str) -> str:
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
             exec(SETUP_CODE, namespace)
 
+        # Pre-validate syntax BEFORE execution to catch errors early
+        try:
+            compile(code, '<generated>', 'exec')
+        except SyntaxError as e:
+            error_msg = f"SyntaxError at line {e.lineno}: {e.msg}"
+            if e.text:
+                error_msg += f"\nProblematic line: {e.text.strip()}"
+            return error_msg
+        except IndentationError as e:
+            error_msg = f"IndentationError at line {e.lineno}: {e.msg}"
+            if e.text:
+                error_msg += f"\nProblematic line: {e.text.strip()}"
+            return error_msg
+
         # Then execute the actual code with all imports available
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
             exec(code, namespace)
@@ -130,7 +144,8 @@ async def run_local(code: str) -> str:
 
         return output
     except Exception as e:
-        return f"Error: {str(e)}"
+        import traceback
+        return f"Error: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
 
 async def run(code: str, sandbox: Optional[object] = None) -> str:
     """

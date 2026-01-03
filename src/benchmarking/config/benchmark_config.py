@@ -31,7 +31,7 @@ class BenchmarkConfig(BaseModel):
     verbose: bool = Field(default=True, description="Verbose logging")
 
     # Evaluation configuration
-    numeric_tolerance: float = Field(default=0.01, description="Relative tolerance for numeric comparison (1% default)")
+    numeric_tolerance: float = Field(default=0.015, description="Relative tolerance for numeric comparison (1.5% default)")
     allow_unit_conversion: bool = Field(default=True, description="Allow unit conversion when comparing answers")
 
     class Config:

@@ -18,6 +18,7 @@ async def solve_step_with_swarm(
     state: StateObject,
     sandbox: Optional["Sandbox"] = None,
     k: int = 3,
+    previous_error: Optional[str] = None,
 ) -> Tuple[bool, Optional[Union[float, str, dict]], Optional[Union[str, dict]], Optional[str], float]:
     """
     Execute step with K parallel attempts and majority voting.
@@ -31,6 +32,7 @@ async def solve_step_with_swarm(
         state: Current state (will be cloned for each execution)
         sandbox: Optional sandbox to reuse
         k: Number of parallel executions (default 3)
+        previous_error: Error from previous failed attempt (enables learning from failures)
 
     Returns:
         Tuple of (success, value, unit, error, cost)
@@ -45,8 +47,8 @@ async def solve_step_with_swarm(
     tasks = []
     for i in range(k):
         state_copy = deepcopy(state)  # Isolate state for this execution
-        # Note: We don't pass error_context to swarm executions
-        task = solve_step(step, state_copy, sandbox, error_context=None)
+        # Pass error context from previous failed attempts to help agents learn
+        task = solve_step(step, state_copy, sandbox, error_context=previous_error)
         tasks.append(task)
 
     # 2. Run all k executions in parallel

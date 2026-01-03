@@ -28,7 +28,17 @@ except Exception:
     pass
 
 
-async def solve_problem(problem: str = "", image_path: Optional[str] = None) -> Dict[str, Any]:
+async def solve_problem(problem: str = "", image_path: Optional[str] = None, expected_unit: str = "") -> Dict[str, Any]:
+    """Solve a problem using the multi-agent orchestrator (planner + swarm).
+
+    Args:
+        problem: Problem text to solve
+        image_path: Optional path to problem image
+        expected_unit: Expected output unit from ground truth (for unit hints)
+
+    Returns:
+        Result dictionary with solution and metadata
+    """
     # Validate inputs
     if not problem and not image_path:
         raise ValueError("Must provide either 'problem' text or 'image_path'")
@@ -104,9 +114,16 @@ async def solve_problem(problem: str = "", image_path: Optional[str] = None) -> 
     try:
         state, plan_obj, plan_cost = plan(problem)
 
+        # Initialize problem context for state
+        state.problem_context = {}
+
         # Add image_path to state context for OBSERVE operations
         if image_path:
-            state.problem_context = {"image_path": image_path}
+            state.problem_context["image_path"] = image_path
+
+        # Add expected_unit to state context for solver prompts
+        if expected_unit:
+            state.problem_context["expected_unit"] = expected_unit
     except Exception as e:
         return {
             "success": False,
@@ -184,7 +201,10 @@ async def solve_problem(problem: str = "", image_path: Optional[str] = None) -> 
             swarm_attempt += 1
 
             # Execute swarm (k=3 parallel agents with majority voting)
-            success, value, unit, error, cost = await solve_step_with_swarm(step, state, sandbox, k=3)
+            # Pass previous error to enable agents to learn from failures
+            success, value, unit, error, cost = await solve_step_with_swarm(
+                step, state, sandbox, k=3, previous_error=last_swarm_error
+            )
             total_cost += cost
 
             if success:
@@ -195,6 +215,28 @@ async def solve_problem(problem: str = "", image_path: Optional[str] = None) -> 
                 last_swarm_error = error
                 if swarm_attempt < max_swarm_attempts:
                     print(f"  ↻ Swarm attempt {swarm_attempt}/{max_swarm_attempts} failed, retrying...")
+
+        # 4.3: Single agent fallback when swarm completely fails
+        if not success:
+            print(f"  ⚠ Swarm failed after {max_swarm_attempts} attempts, trying single agent fallback...")
+            from solver.solver import solve_step
+            try:
+                fallback_success, fallback_value, fallback_unit, fallback_error, fallback_cost = await solve_step(
+                    step, state, sandbox,
+                    error_context=f"Previous swarm attempts failed with: {last_swarm_error}"
+                )
+                total_cost += fallback_cost
+                if fallback_success:
+                    success = True
+                    value = fallback_value
+                    unit = fallback_unit
+                    error = None
+                    print(f"  ✓ RECOVERED: Single agent fallback succeeded!")
+                else:
+                    last_swarm_error = f"Single agent fallback also failed: {fallback_error}"
+            except Exception as e:
+                print(f"  ✗ Single agent fallback exception: {e}")
+                last_swarm_error = f"Swarm and single agent both failed. Last error: {last_swarm_error}"
 
         step_time = time.time() - step_start_time
 
@@ -227,8 +269,33 @@ async def solve_problem(problem: str = "", image_path: Optional[str] = None) -> 
 
         # Update state - handle both single and multiple outputs
         if len(outputs) > 1:
-            # Multi-output step
-            assert isinstance(value, dict) and isinstance(unit, dict), "Multi-output step should return dicts"
+            # Multi-output step - validate that solver returned dicts
+            if not (isinstance(value, dict) and isinstance(unit, dict)):
+                error_msg = f"Multi-output step expected dicts but got value={type(value).__name__}, unit={type(unit).__name__}"
+                print(f"  ✗ FAILED: {error_msg}")
+                if sandbox:
+                    try:
+                        sandbox.kill()
+                    except:
+                        pass
+                return {
+                    "success": False,
+                    "error": f"Step {step.step_id} failed: {error_msg}",
+                    "final_answer": None,
+                    "final_unit": None,
+                    "state": state,
+                    "plan": plan_obj,
+                    "failed_at_step": step.step_id,
+                    "total_time": time.time() - problem_start_time,
+                    "plan_time": plan_time,
+                    "review_time": review_time,
+                    "execution_time": time.time() - execution_start_time,
+                    "plan_cost": plan_cost,
+                    "review_cost": review_cost,
+                    "execution_cost": total_cost,
+                    "vision_cost": vision_cost,
+                    "total_cost": plan_cost + review_cost + total_cost + vision_cost
+                }
             print(f"DEBUG: Multi-output step received:")
             print(f"  Expected variables: {outputs}")
             print(f"  Received keys: {list(value.keys())}")
