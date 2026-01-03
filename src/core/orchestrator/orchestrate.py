@@ -17,7 +17,6 @@ from planner.critics.physics_lawyer import audit_plan
 from planner.revisor import revise_plan
 from vision import analyze_problem_image, analyze_problem_image_with_cv_tools
 from tools.evaluation.code_interpreter import init_sandbox
-
 # Import Sandbox from e2b
 Sandbox = None
 
@@ -407,7 +406,6 @@ async def solve_problem(problem: str = "", image_path: Optional[str] = None, exp
     print("="*60)
 
     final_var = state.variables[plan_obj.final_output]
-
     total_time = time.time() - problem_start_time
 
     print(f"\nFinal answer: {plan_obj.final_output} = {final_var.value} {final_var.unit}")

@@ -45,6 +45,29 @@ try:
     ureg = pint.UnitRegistry()
 except (ImportError, ModuleNotFoundError):
     ureg = None
+
+# SafeMath wrapper to prevent domain errors (e.g., arccos of value > 1)
+import math as _math_orig
+class SafeMath:
+    @staticmethod
+    def acos(x):
+        return _math_orig.acos(max(-1.0, min(1.0, float(x))))
+    @staticmethod
+    def asin(x):
+        return _math_orig.asin(max(-1.0, min(1.0, float(x))))
+    @staticmethod
+    def sqrt(x):
+        return _math_orig.sqrt(max(0.0, float(x)))
+    @staticmethod
+    def log(x, base=None):
+        x = max(1e-300, float(x))
+        return _math_orig.log(x) if base is None else _math_orig.log(x, base)
+    @staticmethod
+    def log10(x):
+        return _math_orig.log10(max(1e-300, float(x)))
+    def __getattr__(self, name):
+        return getattr(_math_orig, name)
+math = SafeMath()
 """
 
 async def init_sandbox(sandbox) -> None:

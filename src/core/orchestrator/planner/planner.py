@@ -19,8 +19,8 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 # Timeout settings for planning API calls
-PLAN_TIMEOUT_SECONDS = 60
-MAX_PLAN_RETRIES = 2
+PLAN_TIMEOUT_SECONDS = 90
+MAX_PLAN_RETRIES = 3
 
 # PLANNER_PROMPT imported from prompts/planning.py
 # MODEL_PRICING imported from config/pricing.py
