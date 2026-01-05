@@ -6,12 +6,24 @@ An intelligent, structured problem-solving system that decomposes complex physic
 
 Quorum uses a multi-step approach to solve physics and mathematics problems with high accuracy:
 
-1. **Plan** - Breaks down complex problems into atomic, executable steps
-2. **Execute** - Generates and runs Python code for each step in a sandboxed environment
-3. **Track** - Maintains state throughout the solving process to minimize hallucinations and errors
-4. **Verify** - Validates results and detects degradation or accuracy loss
+1. **Route** - Classifies problems by difficulty (EASY/MEDIUM/HARD) and dispatches to appropriate solver
+2. **Plan** - Breaks down complex problems into atomic, executable steps
+3. **Execute** - Generates and runs Python code for each step in a sandboxed environment (with SafeMath protection)
+4. **Track** - Maintains state throughout the solving process to minimize hallucinations and errors
 
-The system uses structured JSON state objects to track assumptions, known values, and intermediate results, combined with MARS review planning methodology to ensure each step is logically sound and correctly executed.
+The system uses structured JSON state objects to track assumptions, known values, and intermediate results, combined with K-Ahead Swarm execution (3 parallel agents with majority voting) to ensure each step is logically sound and correctly executed.
+
+## 📊 Current Benchmark Accuracy
+
+**SciBench Benchmark** (physics/math graduate-level problems):
+
+| Sprint | Accuracy | Notes |
+|--------|----------|-------|
+| Sprint 6 | **78.9%** (15/19) | Best result so far |
+| Sprint 7 | 70% (14/20) | Added verification (didn't help, removed) |
+| Sprint 8 | In progress | Fixed math domain errors, increased timeouts |
+
+**Target**: 70-80% accuracy on SciBench
 
 ## 🚦 Smart Routing System (NEW)
 
@@ -273,6 +285,8 @@ Main function: `plan(problem: str) -> Tuple[StateObject, Plan]`
 - Creates step-by-step solution approach
 - Returns structured plan and initial state
 - Prompt template: `prompts/planning.py:PLANNER_PROMPT`
+- **Timeout handling**: 90s per attempt, up to 3 retries (270s max)
+- **JSON validation**: Validates response structure before parsing
 
 ### 3. Physics Lawyer (`src/core/orchestrator/planner/critics/physics_lawyer.py`)
 **Audits plans for conceptual physics errors**
@@ -416,6 +430,11 @@ Features:
 - Automatic library installation (numpy, sympy, pint)
 - Safe, isolated execution environment
 - Cost-effective per-step execution
+- **SafeMath wrapper** - Prevents math domain errors by clamping inputs:
+  - `math.acos(x)` → clamps x to [-1, 1]
+  - `math.asin(x)` → clamps x to [-1, 1]
+  - `math.sqrt(x)` → clamps x to [0, ∞)
+  - `math.log(x)` → clamps x to [1e-300, ∞)
 
 ### 8. Configuration (`src/core/orchestrator/config/pricing.py`)
 **Centralized model pricing configuration**
@@ -546,13 +565,14 @@ asyncio.run(main())
 - **Automatic Repair**: Revisor automatically fixes flagged plans while preserving dependencies
 - **Async Execution**: Full async/await architecture for true parallel execution
 - **Sandboxed Execution**: All code runs in E2B environment for security
+- **SafeMath Protection**: Prevents math domain errors (arccos, sqrt, log) with input clamping
 - **State Tracking**: Maintains complete history of values and assumptions
 - **Robust Error Recovery**: Swarm attempts up to 3 times (9 total agent attempts per step)
 - **Degree Convention**: Angles output in degrees by default (no radian/degree confusion)
 - **Numeric Comparison**: Robust extraction handles scientific notation, symbolic math, embedded numbers
 - **Unit Handling**: Built-in support for unit conversion using Pint
 - **Reproducibility**: Full plan and state are returned with results
-- **Extended Timeout**: 5 minute timeout (300s) for complex problems
+- **Extended Timeout**: 5 minute timeout (300s) for complex problems, 90s planner timeout with 3 retries
 
 ## Roadmap
 
