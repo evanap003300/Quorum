@@ -25,13 +25,28 @@ Key ideas:
 
 ## Results
 
-Evaluated on **SciBench** (graduate physics/math):
+Evaluated on **SciBench** (college-level physics/math problems — the benchmark LLMs historically struggle with).
 
-| Sprint | Accuracy       | Notes                                   |
-|--------|----------------|-----------------------------------------|
-| 6      | **78.9% (15/19)** | Best result                          |
-| 7      | 70% (14/20)    | Verification layer added then removed   |
-| 8      | in progress    | Math domain fixes, extended timeouts    |
+| Sprint | Accuracy           | Notes                                 |
+|--------|--------------------|---------------------------------------|
+| 6      | **78.9% (15/19)**  | Best result                           |
+| 7      | 70% (14/20)        | Verification layer added then removed |
+| 8      | in progress        | Math domain fixes, extended timeouts  |
+
+### How baselines from the SciBench paper do
+
+Numbers from the [SciBench paper (ICML 2024)](https://arxiv.org/html/2307.10635v2):
+
+| System                              | Accuracy |
+|-------------------------------------|----------|
+| LLaMA-2-70B, zero-shot              | 2.4%     |
+| LLaMA-2-70B, few-shot               | 8.4%     |
+| GPT-4, zero-shot CoT                | ~30.4%   |
+| GPT-4 + external tools (Python/Wolfram) | ~43.2% |
+| Best prompting strategy in the paper | 48.96%  |
+| **Quorum (Sprint 6)**               | **78.9%** |
+
+Caveat: Quorum's 78.9% is measured on a 19-problem sample, while the paper numbers are on the full set — not a perfectly apples-to-apples comparison, but the gap is large enough to suggest the structured pipeline (plan → audit → swarm-execute in a sandbox) is doing real work beyond what a raw frontier model or simple tool use gets you.
 
 ## Quickstart
 
